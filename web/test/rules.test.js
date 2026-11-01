@@ -194,10 +194,10 @@ test('explorer jump cannot pass over a piece, ally or enemy', () => {
   assert.ok(acts.some((a) => a.special === 'jump' && at(a, 2, 5)), 'a free jump is still allowed');
 });
 
-test('explorer diagonal cannot squeeze between two pieces', () => {
+test('explorer diagonal goes straight to the corner cell: pieces beside it never block it (rule sheet)', () => {
   const e = P('e', 'explorer', 'blue', 4, 5);
   const ps = [e, P('rs', 'sentinel', 'red', 5, 5), P('bv', 'vanguard', 'blue', 4, 6)];
   const acts = actionsFor(game(flat(), ps), e);
-  assert.ok(!acts.some((a) => a.special === 'diagonal' && at(a, 5, 6)), 'blocked: both corners taken');
-  assert.ok(acts.some((a) => a.special === 'diagonal' && at(a, 5, 4)), 'one free corner is enough');
+  assert.ok(acts.some((a) => a.special === 'diagonal' && at(a, 5, 6)), 'both corners taken: still allowed');
+  assert.ok(acts.some((a) => a.special === 'diagonal' && at(a, 5, 4)));
 });

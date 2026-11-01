@@ -105,8 +105,8 @@ function attackActions(state, piece, cost, budget) {
 }
 
 // Explorer specials, from the starting cell, ignoring height: a diagonal step or a 2-cell jump.
-// Like every move they cannot pass through pieces: a jump needs its middle cell free, and a diagonal step
-// cannot squeeze between two pieces (at least one of the two cells it cuts past must be free).
+// A jump cannot pass over a piece (its middle cell must be free); a diagonal step goes straight to the
+// corner cell, so the pieces beside it never block it.
 function explorerSpecials(state, piece) {
   const at = new Map(state.pieces.map((p) => [key(p.r, p.c), p]));
   const out = [];
@@ -114,10 +114,7 @@ function explorerSpecials(state, piece) {
   for (const [special, dr, dc] of specials) {
     const r = piece.r + dr, c = piece.c + dc;
     if (!inside(r, c)) continue;
-    const blocked = special === 'jump'
-      ? at.has(key(piece.r + dr / 2, piece.c + dc / 2))
-      : at.has(key(piece.r + dr, piece.c)) && at.has(key(piece.r, piece.c + dc));
-    if (blocked) continue;
+    if (special === 'jump' && at.has(key(piece.r + dr / 2, piece.c + dc / 2))) continue;
     const there = at.get(key(r, c));
     if (!there) out.push({ kind: 'move', to: [r, c], special });
     else if (there.team !== piece.team)
