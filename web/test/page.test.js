@@ -28,3 +28,9 @@ test('main.js reports a missing WebGL instead of a blank page', () => {
   const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
   assert.match(main, /catch[\s\S]*WebGL/);
 });
+test('any startup error is shown with its detail, not a blank page', () => {
+  const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
+  assert.match(main, /function showError\(/);
+  assert.match(main, /catch \(e\) \{\s*showError\(/);
+  assert.match(main, /webglcontextlost/);
+});

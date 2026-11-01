@@ -104,7 +104,9 @@ test('page explains a missing WebGL', { skip: !chromium && 'playwright not insta
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${server.address().port}/`);
     await page.waitForSelector('#error:not([hidden])');
-    assert.match(await page.textContent('#error'), /WebGL/);
+    const text = await page.textContent('#error');
+    assert.match(text, /WebGL/);
+    assert.match(text, /accélération graphique/);   // tells the player how to fix it (Edge, Chrome…)
   } finally {
     await browser.close();
     server.close();
