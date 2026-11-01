@@ -6,6 +6,7 @@ import { colorForHeight } from './terrain.js';
 import { pickCell, createClickTracker } from './pick.js';
 import { HEIGHT_UNIT, VIEW_DIR, MAX_POLAR, floorFor, boardBox, fitCamera, zoomLimits } from './camera.js';
 import { pieceShape, spikePositions } from './shapes.js';
+import { createTweens } from './tweens.js';
 
 const LIFT = 0.15;   // selected piece is raised by this much
 const TEAM_COLOR = { red: 0xd12a2a, blue: 0x2f62d8 };
@@ -25,6 +26,7 @@ const solid = (color) => mat(color, () => new THREE.MeshStandardMaterial({ color
 const flat = (key, color, opacity) => mat(key, () => new THREE.MeshBasicMaterial({ color, transparent: true, opacity }));
 const EDGE = () => mat('edge', () => new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
 const NOTCH = () => mat('notch', () => new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28 }));
+const SPECIAL_MARK = { diagonal: 'D', jump: 'B' };
 const PLATES = {
   move: () => flat('move', 0xffd700, 0.6),
   exit: () => flat('exit', 0xffd700, 0.6),
@@ -34,6 +36,8 @@ const PLATES = {
 };
 
 // Small text drawn on a flat square (height numbers, costs) or a floating sprite (combat result).
+// Textures are cached for the page's lifetime: the set of texts is small and bounded (heights -10..10,
+// costs, D/B marks, a few "x contre y"), so the cache never needs clearing.
 const textures = new Map();
 function textTexture(text, color = '#ffffff') {
   const k = text + color;
@@ -126,34 +130,16 @@ export function createScene(container) {
   let board = null;
   let currentTurn;
   let box = null;
-  let animate = true;
   let clickCb = () => {};
   const pieceMeshes = new Map(); // piece id -> Group, reused across moves
   const moving = new Set();      // ids whose position a tween controls
 
-  // Tweens: update(k) with k going 0 -> 1 over `ms`, then done().
-  let tweens = [];
-  function tween(ms, update, done = () => {}, delay = 0) {
-    if (!animate) { update(1); done(); return null; }
-    const t = { start: performance.now() + delay, ms, update, done };
-    tweens.push(t);
-    return t;
-  }
-  const cancel = (t) => { if (t) tweens = tweens.filter((x) => x !== t); };
+  const tweens = createTweens(() => performance.now());
+  const { tween, cancel } = tweens;
   const walks = new Map();   // object -> its running walk tween (one walk at a time per object)
   let turning = null;        // the running camera turn
   let userMoved = false;     // the player has rotated or zoomed since the board was drawn
   controls.addEventListener('start', () => { userMoved = true; });
-  function runTweens(now) {
-    tweens = tweens.filter((t) => {
-      if (now < t.start) return true;
-      const k = Math.min(1, (now - t.start) / t.ms);
-      t.update(k);
-      if (k < 1) return true;
-      t.done();
-      return false;
-    });
-  }
 
   // Frame the whole board, keeping the current viewing direction, and limit the zoom around that view.
   // With move = false (window resized after the player rotated or zoomed) only the zoom limits follow:
@@ -181,7 +167,7 @@ export function createScene(container) {
   /** Draws a new board (new game): resets pieces, animations and the camera framing. style: see restyle. */
   function setBoard(b, style) {
     board = b;
-    tweens = [];
+    tweens.clear();
     walks.clear();
     turning = null;
     userMoved = false;
@@ -254,14 +240,15 @@ export function createScene(container) {
       const p = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.9), PLATES[kind]());
       p.position.copy(at(r, c, 0.02));
       p.userData = { kind: 'target', r, c };
-      if (showCosts && cost !== undefined) {
+      if (cost !== undefined && (showCosts || typeof cost === 'string')) {
         const l = label(String(cost), 0.3);
         l.position.y = 0.025;
         p.add(l);
       }
       highlightGroup.add(p);
     };
-    for (const m of moves) plate(m.to, m.special ? 'special' : 'move', m.cost);
+    // Special cells also carry a letter, so they are told apart without relying on colour: D(iagonale), B(ond).
+    for (const m of moves) plate(m.to, m.special ? 'special' : 'move', m.special ? SPECIAL_MARK[m.special] : m.cost);
     for (const e of exits) plate(e.to, 'exit', e.cost);
     for (const a of attacks) plate(a, 'attack');
     for (const a of refused) plate(a, 'refused');
@@ -375,11 +362,11 @@ export function createScene(container) {
     frame(!userMoved);
   }).observe(container);
 
-  renderer.setAnimationLoop((now) => { runTweens(now); controls.update(); renderer.render(scene, camera); });
+  renderer.setAnimationLoop((now) => { tweens.run(now); controls.update(); renderer.render(scene, camera); });
 
   return {
     setBoard, restyle, setPieces, setHighlights, playMove, faceTeam, setTheme,
-    setAnimations: (on) => { animate = on; },
+    setAnimations: (on) => tweens.setEnabled(on),
     onCellClick: (cb) => { clickCb = cb; },
   };
 }

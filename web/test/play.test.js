@@ -56,7 +56,7 @@ test('exit: the cells past the finish line are highlighted; clicking one exits a
   const pcs = [P('rv', 'vanguard', 'red', 1, 5), P('bx', 'explorer', 'blue', 5, 1)];
   const sel = handleClick(start(pcs), 1, 5);
   assert.ok(highlights(sel).exits.some(({ to: [r, c], cost }) => r === 0 && c === 5 && cost === 1));
-  assert.match(sel.message, /au-delà de l'arrivée/);
+  assert.match(sel.message, /au-delà du bord = sortie/);
   const s = handleClick(sel, 0, 5);
   assert.equal(s.scores.red, 2);
   assert.match(s.message, /Avant-garde rouge franchit l'arrivée : \+2/);
@@ -121,4 +121,14 @@ test('cells only reachable by an explorer special move are flagged, so they can 
   assert.deepEqual(cell(4, 5), { to: [4, 5], cost: 3 });               // one step: normal, with its cost
   assert.deepEqual(cell(3, 5), { to: [3, 5], special: 'jump' });       // two steps would cost 6 > 5
   assert.deepEqual(cell(4, 6), { to: [4, 6], special: 'diagonal' });
+});
+test('selection messages fit the message area on a phone (about 110 characters)', () => {
+  const pcs = [P('re', 'explorer', 'red', 1, 5), P('rv', 'vanguard', 'red', 9, 9), P('bx', 'explorer', 'blue', 5, 1)];
+  for (const [r, c] of [[1, 5], [9, 9]]) {
+    const m = handleClick(start(pcs), r, c).message;
+    assert.ok(m.length <= 110, `${m.length}: ${m}`);
+  }
+  assert.doesNotMatch(handleClick(start(pcs), 1, 5).message, /violette/, 'flat: no violet cell, no violet hint');
+  const b = flat(); for (let r = 1; r <= 10; r++) for (let c = 1; c <= 10; c++) b[r][c] = (r + c) % 2 ? 0 : 2;
+  assert.match(handleClick({ ...newGameState(b, 'Bois'), pieces: pcs }, 1, 5).message, /violette = diagonale\/bond/);
 });

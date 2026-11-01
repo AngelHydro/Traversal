@@ -100,10 +100,17 @@ export function handleClick(state, r, c) {
     const f = FEMININE[here.type];
     return { ...state, selected: null, message: `${f ? 'Cette' : 'Cet'} ${name} est bloqué${f ? 'e' : ''} : choisissez une autre pièce.` };
   }
-  const exit = acts.some((a) => a.kind === 'exit') ? ', ou au-delà de l\'arrivée pour la franchir' : '';
+  // Only the hints that apply, so the message stays short enough for a phone.
+  const hints = [
+    acts.some((a) => a.kind === 'move' && !a.special) && 'jaune = déplacement',
+    acts.some((a) => a.kind === 'attack') && 'rouge = attaque',
+    acts.some((a) => a.kind === 'exit') && 'au-delà du bord = sortie',
+    // Violet only for cells no normal move reaches (same rule as the plates).
+    acts.some((a) => a.special && a.kind === 'move'
+      && !acts.some((n) => n.kind === 'move' && !n.special && n.to.join() === a.to.join())) && 'violette = diagonale/bond',
+  ].filter(Boolean);
   return { ...state, selected: here.id,
-    message: `${name} (Mouvement ${move}, Force ${strength}) : case jaune pour se déplacer, rouge pour attaquer${exit}`
-      + (here.type === 'explorer' ? ', violette pour un pas en diagonale ou un bond (sans coût de relief).' : '.')
+    message: `${name} (Mouvement ${move}, Force ${strength}) : ${hints.join(', ')}.`
       + attackSummary(state, here) };
 }
 

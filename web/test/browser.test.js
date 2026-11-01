@@ -184,6 +184,53 @@ test('a piece exits by clicking the cell past the finish line', { skip: !chromiu
   }
 });
 
+test("resizing the view keeps the player's zoom", { skip: !chromium && 'playwright not installed' }, async () => {
+  const server = await serve();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: W, height: H }, colorScheme: 'light' });
+    const url = `http://127.0.0.1:${server.address().port}/?terrain=woods&plateau=5`;
+    // Width in pixels of the board along the canvas' middle line (anything not the light background).
+    const boardWidth = async () => {
+      const png = (await page.locator('#view canvas').screenshot()).toString('base64');
+      return page.evaluate(async (src) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${src}`;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const row = g.getImageData(0, Math.floor(img.height / 2), img.width, 1).data;
+        const bg = [0xdf, 0xe9, 0xf3];
+        let lo = Infinity, hi = -1;
+        for (let x = 0; x < img.width; x++)
+          if (Math.abs(row[4 * x] - bg[0]) + Math.abs(row[4 * x + 1] - bg[1]) + Math.abs(row[4 * x + 2] - bg[2]) > 30)
+            { lo = Math.min(lo, x); hi = x; }
+        return hi - lo;
+      }, png);
+    };
+    const ready = () => page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    const openHelp = async () => { await page.click('#help summary'); await page.waitForTimeout(400); };
+
+    await page.goto(url); await ready();
+    await openHelp();                                    // the panel grows: the canvas gets smaller
+    const fitted = await boardWidth();
+
+    await page.goto(url); await ready();
+    const box = await page.locator('#view canvas').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -200); await page.waitForTimeout(80); }
+    await page.waitForTimeout(300);
+    await openHelp();
+    const zoomed = await boardWidth();
+    assert.ok(zoomed > fitted * 1.15, `zoom lost on resize: ${zoomed}px vs ${fitted}px fitted`);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
 test('settings: change, apply at once, and survive a reload', { skip: !chromium && 'playwright not installed' }, async () => {
   const server = await serve();
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
