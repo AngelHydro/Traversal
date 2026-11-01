@@ -1,6 +1,6 @@
 // Page wiring: landscape choice, turn loop, captures, win.
 import { LANDSCAPES, generateBoard } from './terrain.js';
-import { initialPieces, legalMoves, movePiece, winner, other } from './rules.js';
+import { initialPieces, legalMoves, movePiece, winner, other, dealBoard } from './rules.js';
 import { createScene } from './scene.js';
 
 const TEAM = { black: 'noirs', red: 'rouges' };
@@ -28,10 +28,8 @@ function render() {
 }
 
 function newGame() {
-  const board = generateBoard(Number(select.value));
+  const board = dealBoard(() => generateBoard(Number(select.value)));
   state = { board, pieces: initialPieces(), turn: 'black', selected: null, winner: null, captured: { black: 0, red: 0 } };
-  // A team may be walled in from the start; that is a loss for the side to move, as in play.
-  state.winner = winner(board, state.pieces, 'black');
   view.setBoard(board);
   render();
 }

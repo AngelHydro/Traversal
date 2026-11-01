@@ -54,3 +54,12 @@ test('winner: side with no legal move loses', () => {
   const b = flat(); b[4][5] = b[6][5] = b[5][4] = b[5][6] = 2;
   assert.equal(winner(b, [p(5, 5, 'red'), p(2, 2)], 'red'), 'black');
 });
+test('dealBoard regenerates a board where the side to move is walled in', async () => {
+  const { dealBoard } = await import('../rules.js');
+  const walled = flat(); for (let c = 1; c <= 10; c++) walled[2][c] = 2;
+  const boards = [walled, flat()];
+  let calls = 0;
+  const b = dealBoard(() => boards[calls++]);
+  assert.equal(calls, 2);
+  assert.equal(b, boards[1]);
+});

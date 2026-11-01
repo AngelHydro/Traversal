@@ -43,3 +43,10 @@ export function winner(board, pieces, toMove) {
   const canMove = pieces.some((q) => q.team === toMove && legalMoves(board, pieces, q).length > 0);
   return canMove ? null : other(toMove);
 }
+
+// Draws boards until black (who moves first) has a legal move, so no game is over before it starts.
+export function dealBoard(generate, tries = 50) {
+  let board = generate();
+  for (let k = 1; k < tries && winner(board, initialPieces(), 'black'); k++) board = generate();
+  return board;
+}
