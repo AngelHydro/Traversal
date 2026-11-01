@@ -1,7 +1,7 @@
-// Page wiring: landscape choice, clicks, and what the player is told.
-import { LANDSCAPES, DEFAULT_LANDSCAPE, generateBoard } from './terrain.js';
-import { dealBoard } from './rules.js';
-import { newGameState, handleClick, targets, TEAM } from './play.js';
+// Page wiring: terrain mode, board number, clicks, exit button, and what the player is told.
+import { MODES, DEFAULT_MODE, generateBoard, makeRng } from './terrain.js';
+import { MOVE_LIMIT } from './rules.js';
+import { newGameState, handleClick, handleExit, highlights, actionChoices, playChoice, TEAM } from './play.js';
 import { createScene } from './scene.js';
 
 const $ = (id) => document.getElementById(id);
@@ -16,30 +16,49 @@ const NO_WEBGL = "Impossible d'afficher le plateau : WebGL n'est pas disponible 
   + "Chrome : Paramètres › Système), puis redémarrez le navigateur, ou essayez Firefox.";
 
 const select = $('landscape');
-for (const group of [...new Set(LANDSCAPES.map((l) => l.group))]) {
-  const og = document.createElement('optgroup');
-  og.label = group;
-  for (const l of LANDSCAPES.filter((x) => x.group === group)) og.append(new Option(l.name, l.id));
-  select.append(og);
+for (const m of MODES) {
+  const o = new Option(m.name, m.id);
+  o.title = m.hint;
+  select.append(o);
 }
-select.value = String(DEFAULT_LANDSCAPE);
+// ?terrain=<mode>&plateau=<number> replays the same board (handy for a physical edition).
+const params = new URLSearchParams(location.search);
+select.value = MODES.some((m) => m.id === params.get('terrain')) ? params.get('terrain') : DEFAULT_MODE;
+let seed = Number(params.get('plateau')) || null;
 
 let view;
 let state;
 
 function render() {
-  view.setPieces(state.pieces, state.selected);
-  view.setHighlights(targets(state));
-  $('status').textContent = state.winner ? `Victoire des ${TEAM[state.winner]} !` : `Au tour des ${TEAM[state.turn]}`;
+  const hl = highlights(state);
+  view.setPieces(state.pieces, state.selected, state.winner ? undefined : state.turn);
+  view.setHighlights(hl.moves, hl.attacks, hl.refused);
+  renderChoices();
+  $('exit').hidden = !hl.canExit;
+  $('status').textContent = state.winner
+    ? (state.winner === 'draw' ? 'Match nul' : `Victoire du joueur ${state.winner === 'red' ? 1 : 2} (${TEAM[state.winner]})`)
+    : `Au tour du joueur ${state.turn === 'red' ? 1 : 2} (${TEAM[state.turn]})`;
   $('status').className = state.winner ? 'win' : state.turn;
   $('last').textContent = state.message;
-  $('captures').textContent = `Captures — noirs : ${state.captured.black}, rouges : ${state.captured.red}`;
+  $('score').textContent = `Score : rouge ${state.scores.red}, bleu ${state.scores.blue} · Arrivées ${state.exited.length}/2 · `
+    + `Coup ${state.moveCount}/${MOVE_LIMIT} · Plateau n° ${state.seed}`;
+}
+
+// Keyboard and screen-reader play: every legal action of the side to move, in words.
+let choices = [];
+function renderChoices() {
+  choices = actionChoices(state);
+  $('choices').replaceChildren(...choices.map((c, i) => new Option(c.label, i)));
+  $('play').disabled = choices.length === 0;
 }
 
 function newGame() {
-  const id = Number(select.value);
-  const board = dealBoard(() => generateBoard(id));
-  state = newGameState(board, LANDSCAPES.find((l) => l.id === id).name);
+  const mode = MODES.find((m) => m.id === select.value);
+  const boardSeed = seed || Math.floor(Math.random() * 1e6) + 1;
+  seed = null; // only the first game uses the seed from the address
+  const board = generateBoard(mode.id, makeRng(boardSeed));
+  state = { ...newGameState(board, mode.name), seed: boardSeed };
+  history.replaceState(null, '', `?terrain=${mode.id}&plateau=${boardSeed}`);
   view.setBoard(board);
   render();
 }
@@ -51,16 +70,17 @@ const guarded = (fn) => (...args) => {
 
 try {
   view = createScene($('view'));
-  // The GPU can drop the context (driver reset, too many tabs): say so, and clear it once restored.
   const LOST = 'Le rendu 3D a été interrompu par le navigateur. Rechargez la page si le plateau ne revient pas.';
   $('view').addEventListener('webglcontextlost', () => { if ($('error').hidden) showError(LOST); }, true);
   // Only clear our own banner: another error shown meanwhile must stay visible.
   $('view').addEventListener('webglcontextrestored', () => {
     if ($('error').textContent === LOST) $('error').hidden = true;
   }, true);
-  view.onCellClick(guarded((r, c) => {
-    state = handleClick(state, r, c);
-    render();
+  view.onCellClick(guarded((r, c) => { state = handleClick(state, r, c); render(); }));
+  $('exit').addEventListener('click', guarded(() => { state = handleExit(state); render(); }));
+  $('play').addEventListener('click', guarded(() => {
+    const choice = choices[Number($('choices').value)];
+    if (choice) { state = playChoice(state, choice); render(); }
   }));
   $('new').addEventListener('click', guarded(newGame));
   select.addEventListener('change', guarded(newGame));

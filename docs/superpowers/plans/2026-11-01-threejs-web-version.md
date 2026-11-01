@@ -1,5 +1,7 @@
 # Version web Three.js — Plan d'implémentation
 
+> **Remplacé pour les règles.** Ce plan date de la première version web, qui reprenait des règles provisoires tirées de `game.py` (soldat, garde, médecin, 10 pièces par camp, victoire en atteignant la dernière rangée). Les règles en vigueur sont dans [`REGLES.md`](../../../REGLES.md). Ce document ne reste ici que comme trace de la structure technique (terrain, rendu Three.js, page).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Publier sur GitHub Pages une version jouable dans le navigateur du jeu de `game.py` : terrain 3D généré aléatoirement, pièces (soldat, garde, médecin), déplacements selon les règles d'élévation, captures, victoire et défaite.

@@ -3,48 +3,39 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { colorForHeight } from './terrain.js';
 import { pickCell, createClickTracker } from './pick.js';
-import { HEIGHT_UNIT, FLOOR, boardSphere, fitCamera } from './camera.js';
+import { HEIGHT_UNIT, FLOOR, VIEW_DIR, boardSphere, fitCamera } from './camera.js';
 
-const PIECE_H = 0.25;
 const LIFT = 0.15; // selected piece is raised by this much
-const TEAM_COLOR = { black: 0x111111, red: 0xcc0000 };
+const TEAM_COLOR = { red: 0xd12a2a, blue: 0x2f62d8 };
 const CLICK_SLOP = 5; // px: a drag longer than this rotates the camera, it does not click
 
 const top = (h) => h * HEIGHT_UNIT;
 const cx = (c) => c - 5.5;
 const cz = (r) => r - 5.5;
 
-// Flat bars for a piece, in cell-local coordinates: [dr, dc, lenR, lenC] (centre offset + size).
-// Silhouettes from game.py: soldier = sword (391), medic = plus (494).
-const BARS = {
-  soldier: [[0, 0, 0.8, 0.1], [0.15, 0, 0.1, 0.5]],
-  medic: [[0, 0, 0.8, 0.2], [0, 0, 0.2, 0.8]],
+// Piece shapes from the rules: the number of sides of the base is the piece's Movement.
+// Explorer = pentagonal cone (5), vanguard = diamond prism (4), sentinel = triangular prism (3).
+const SHAPES = {
+  explorer: () => new THREE.ConeGeometry(0.34, 0.62, 5),
+  vanguard: () => new THREE.CylinderGeometry(0.34, 0.34, 0.42, 4),
+  sentinel: () => new THREE.CylinderGeometry(0.36, 0.36, 0.5, 3),
 };
-// Guard = pentagonal shield (game.py 452), points as [dr, dc].
-const SHIELD = [[-0.375, -0.25], [-0.375, 0.25], [0.125, 0.25], [0.375, 0], [0.125, -0.25]];
 
 // Materials are few and shared for the page's lifetime; only geometries are disposed.
 const materials = new Map();
 const mat = (key, make) => materials.get(key) || materials.set(key, make()).get(key);
 const solid = (color) => mat(color, () => new THREE.MeshStandardMaterial({ color }));
 const EDGE = () => mat('edge', () => new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
-const TARGET = () => mat('target', () => new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.6 }));
+const MOVE_PLATE = () => mat('move', () => new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.6 }));
+const ATTACK_PLATE = () => mat('attack', () => new THREE.MeshBasicMaterial({ color: 0xff2d2d, transparent: true, opacity: 0.7 }));
+const REFUSED_PLATE = () => mat('refused', () => new THREE.MeshBasicMaterial({ color: 0x6b6b6b, transparent: true, opacity: 0.7 }));
 
 function pieceMesh(piece) {
-  const m = solid(TEAM_COLOR[piece.team]);
+  const geo = SHAPES[piece.type]();
+  geo.computeBoundingBox();
+  geo.translate(0, -geo.boundingBox.min.y, 0); // stand on the cell's top face
   const g = new THREE.Group();
-  if (piece.type === 'guard') {
-    const shape = new THREE.Shape(SHIELD.map(([dr, dc]) => new THREE.Vector2(dc, -dr)));
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: PIECE_H, bevelEnabled: false });
-    geo.rotateX(-Math.PI / 2); // extrusion now goes up, shape y (= -dr) maps to z = dr
-    g.add(new THREE.Mesh(geo, m));
-  } else {
-    for (const [dr, dc, lr, lc] of BARS[piece.type]) {
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(lc, PIECE_H, lr), m);
-      bar.position.set(dc, PIECE_H / 2, dr);
-      g.add(bar);
-    }
-  }
+  g.add(new THREE.Mesh(geo, solid(TEAM_COLOR[piece.team])));
   return g;
 }
 
@@ -67,7 +58,7 @@ export function createScene(container) {
   scene.add(sun);
 
   const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
-  camera.position.set(0, 13, 13);
+  camera.position.set(...VIEW_DIR);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, 0);
   controls.update();
@@ -78,6 +69,7 @@ export function createScene(container) {
   scene.add(boardGroup, pieceGroup, highlightGroup);
 
   let board = null;
+  let currentTurn;
   let sphere = null;
 
   // Frame the whole board, keeping the current viewing direction (the player may have rotated).
@@ -117,7 +109,8 @@ export function createScene(container) {
     frame();
   }
 
-  function setPieces(pieces, selectedId) {
+  function setPieces(pieces, selectedId, turn) {
+    currentTurn = turn;
     const alive = new Set(pieces.map((p) => p.id));
     for (const [id, g] of pieceMeshes)
       if (!alive.has(id)) { pieceGroup.remove(g); disposeGeometries(g); pieceMeshes.delete(id); }
@@ -125,18 +118,20 @@ export function createScene(container) {
       let g = pieceMeshes.get(p.id);
       if (!g) { g = pieceMesh(p); pieceMeshes.set(p.id, g); pieceGroup.add(g); }
       g.position.set(cx(p.c), top(board[p.r][p.c]) + (p.id === selectedId ? LIFT : 0), cz(p.r));
-      g.traverse((x) => { x.userData = { kind: 'piece', selected: p.id === selectedId, r: p.r, c: p.c }; });
+      g.traverse((x) => { x.userData = { kind: 'piece', team: p.team, selected: p.id === selectedId, r: p.r, c: p.c }; });
     }
   }
 
-  function setHighlights(cells) {
+  // Yellow plates: cells to move to. Red: enemies that can be attacked. Grey: enemies in reach but too strong.
+  function setHighlights(moves, attacks = [], refused = []) {
     clear(highlightGroup);
-    for (const [r, c] of cells) {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.9), TARGET());
-      plate.position.set(cx(c), top(board[r][c]) + 0.02, cz(r));
-      plate.userData = { kind: 'target', r, c };
-      highlightGroup.add(plate);
-    }
+    for (const [cells, material] of [[moves, MOVE_PLATE()], [attacks, ATTACK_PLATE()], [refused, REFUSED_PLATE()]])
+      for (const [r, c] of cells) {
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.9), material);
+        plate.position.set(cx(c), top(board[r][c]) + 0.02, cz(r));
+        plate.userData = { kind: 'target', r, c };
+        highlightGroup.add(plate);
+      }
   }
 
   // Click picking: single-pointer taps only (drags rotate, pinches zoom).
@@ -151,7 +146,7 @@ export function createScene(container) {
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const cell = pickCell(ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true));
+    const cell = pickCell(ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true), currentTurn);
     if (cell) clickCb(cell[0], cell[1]);
   });
 

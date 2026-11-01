@@ -1,27 +1,39 @@
-// Terrain generation, ported from game.py (gen_board, gen_mix_board, check_board, board_scramble).
+// Terrain generation, built on game.py's generator (gen_board, gen_mix_board, check_board).
+import { MinHeap } from './heap.js';
 // Board is SIZE x SIZE with a fixed border at height 0; playable cells are 1..10.
 
 export const SIZE = 12;
 
-export const LANDSCAPES = [
-  { id: 1, group: 'Montagnes', name: 'Montagnes hautes', kind: 'scramble', factor: 0.15 },
-  { id: 2, group: 'Montagnes', name: 'Montagnes moyennes', kind: 'scramble', factor: 0.225 },
-  { id: 3, group: 'Montagnes', name: 'Montagnes basses', kind: 'scramble', factor: 0.3 },
-  { id: 4, group: 'Forêts', name: 'Forêts hautes', kind: 'scramble', factor: 0.4 },
-  { id: 5, group: 'Forêts', name: 'Forêts moyennes', kind: 'scramble', factor: 0.5 },
-  { id: 6, group: 'Forêts', name: 'Forêts basses', kind: 'scramble', factor: 0.6 },
-  { id: 7, group: 'Vallées', name: 'Vallées hautes', kind: 'scramble', factor: 0.7 },
-  { id: 8, group: 'Vallées', name: 'Vallées moyennes', kind: 'scramble', factor: 0.775 },
-  { id: 9, group: 'Vallées', name: 'Vallées basses', kind: 'scramble', factor: 0.85 },
-  { id: 10, group: 'Spécial', name: 'Mont Everest', kind: 'max' },
-  { id: 11, group: 'Spécial', name: 'Gasherbrum I', kind: 'scramble', factor: 0.1 },
-  { id: 12, group: 'Spécial', name: 'Montagnes et vallées', kind: 'mix', factor: 0.5 },
-  { id: 13, group: 'Spécial', name: 'Fosse des Kouriles', kind: 'scramble', factor: 0.9 },
-  { id: 14, group: 'Spécial', name: 'Fosse des Mariannes', kind: 'min' },
+/**
+ * Terrain modes from the rules. Each is a recipe for the game.py generator; 'random' picks one of the others.
+ * scramble: +1/-1 pushes biased by `factor` (low = mostly up), `push` per ring pass; mix: half rises, half sinks;
+ * peaks: a flat plain with a few hills.
+ */
+export const MODES = [
+  { id: 'random', name: 'Aléatoire', hint: 'Variété équilibrée de terrains' },
+  { id: 'mountains', name: 'Montagnes', hint: 'Pics centraux spectaculaires', kind: 'scramble', factor: 0.225, push: 150 },
+  { id: 'valleys', name: 'Vallées', hint: 'Cuvettes profondes bordées de crêtes', kind: 'scramble', factor: 0.775, push: 150 },
+  { id: 'highlands', name: 'Hautes terres', hint: 'Montagnes et vallées réunies', kind: 'mix' },
+  { id: 'woods', name: 'Bois', hint: 'Plutôt plat, collines douces', kind: 'scramble', factor: 0.5, push: 25 },
+  { id: 'desert', name: 'Désert', hint: 'Étendues plates, rares pics', kind: 'peaks', peaks: 3 },
 ];
 
-/** Landscape selected when the page opens: Forêts moyennes. */
-export const DEFAULT_LANDSCAPE = 5;
+/** Mode selected when the page opens. */
+export const DEFAULT_MODE = 'random';
+
+/**
+ * Seeded uniform [0, 1) generator (mulberry32): the same seed always gives the same board.
+ * @param {number} seed
+ */
+export function makeRng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // color_stick from game.py, indexed by height + 10, three heights per color.
 const COLORS = [0x000080, 0x1e90ff, 0x8b4513, 0x008000, 0x808080, 0xffffff, 0x87ceeb];
@@ -106,21 +118,78 @@ function genMixBoard(b, rng, push) {
   }
 }
 
+// A few hills on a flat plain: repeated +1 pushes in a 3x3 window around random centres.
+function genPeaks(b, rng, peaks) {
+  for (let k = 0; k < peaks; k++) {
+    const ci = randInt(rng, 2, 10), cj = randInt(rng, 2, 10);
+    for (let n = 0; n < 12; n++) {
+      const i = ci + randInt(rng, -1, 2), j = cj + randInt(rng, -1, 2);
+      b[i][j] += 1;
+      if (violates(b, i, j)) b[i][j] -= 1;
+    }
+  }
+}
+
+// Cheapest crossing cost (movement rule: 1 on the flat, height difference + 1 otherwise) from each start
+// column of `fromRow` to any cell of `toRow`, averaged over the six start columns (3..8). Pieces ignored.
+function crossing(b, fromRow, toRow) {
+  const total = [3, 4, 5, 6, 7, 8].reduce((sum, c0) => {
+    const cost = Array.from({ length: SIZE }, () => Array(SIZE).fill(Infinity));
+    cost[fromRow][c0] = 0;
+    const open = new MinHeap();
+    open.push([0, fromRow, c0]);
+    while (open.size) {
+      const [d, r, c] = open.pop();
+      if (r === toRow) return sum + d;
+      if (d > cost[r][c]) continue;
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 1 || nr > 10 || nc < 1 || nc > 10) continue;
+        const nd = d + (b[r][c] === b[nr][nc] ? 1 : Math.abs(b[r][c] - b[nr][nc]) + 1);
+        if (nd < cost[nr][nc]) { cost[nr][nc] = nd; open.push([nd, nr, nc]); }
+      }
+    }
+    return sum;
+  }, 0);
+  return total / 6;
+}
+
 /**
- * Random board for a landscape, as game.py generates it.
- * @param {number} landscapeId id from LANDSCAPES
- * @param {() => number} [rng] uniform [0, 1) source
+ * How much a board favours one side: difference of the average cost to reach the middle of the board
+ * (red from row 10 to row 6, blue from row 1 to row 5: who gets to the contested ground faster; a full
+ * crossing costs the same both ways) plus the difference of mean height of each side's half (high ground
+ * helps in combat). 0 means both sides face equivalent terrain.
+ * @param {number[][]} b 12x12 heights
+ */
+export function imbalance(b) {
+  const half = (rows) => rows.flatMap((r) => b[r].slice(1, 11)).reduce((s, h) => s + h, 0) / 50;
+  return Math.abs(crossing(b, 10, 6) - crossing(b, 1, 5)) + Math.abs(half([6, 7, 8, 9, 10]) - half([1, 2, 3, 4, 5]));
+}
+
+/**
+ * Random board for a terrain mode, built with game.py's generator. Terrain stays fully random; to keep
+ * the game fair, boards are drawn until one has an `imbalance` of 0.25 or less, up to `tries` boards,
+ * and the most balanced one drawn is kept.
+ * @param {string} modeId id from MODES
+ * @param {() => number} [rng] uniform [0, 1) source, e.g. makeRng(seed)
+ * @param {number} [tries=40] candidates drawn; 1 returns the first raw board
  * @returns {number[][]} 12x12 heights with a 0 border
  */
-export function generateBoard(landscapeId, rng = Math.random) {
-  const l = LANDSCAPES.find((x) => x.id === landscapeId);
-  if (!l) throw new Error(`Terrain inconnu : ${landscapeId}`);
-  if (l.kind === 'max') return boardBounds().max;
-  if (l.kind === 'min') return boardBounds().min;
-  const b = grid(0);
-  if (l.kind === 'mix') genMixBoard(b, rng, 250);
-  else for (let k = 1; k <= 4; k++) genBoard(b, rng, 150, k, SIZE - k, l.factor);
-  return b;
+export function generateBoard(modeId, rng = Math.random, tries = 40) {
+  const m = MODES.find((x) => x.id === modeId);
+  if (!m) throw new Error(`Terrain inconnu : ${modeId}`);
+  // Aléatoire draws its mode once, uniformly: balancing must not favour the modes that balance easily.
+  if (m.id === 'random') return generateBoard(MODES[1 + Math.floor(rng() * (MODES.length - 1))].id, rng, tries);
+  let best = null, bestScore = Infinity;
+  for (let k = 0; k < tries && bestScore > 0.25; k++) {
+    const b = grid(0);
+    if (m.kind === 'mix') genMixBoard(b, rng, 250);
+    else if (m.kind === 'peaks') genPeaks(b, rng, m.peaks);
+    else for (let i = 1; i <= 4; i++) genBoard(b, rng, m.push, i, SIZE - i, m.factor);
+    const score = tries === 1 ? 0 : imbalance(b);
+    if (score < bestScore) { best = b; bestScore = score; }
+  }
+  return best;
 }
 
 /** Terrain color (0xRRGGBB) for a height in -10..10, from game.py's color_stick. */

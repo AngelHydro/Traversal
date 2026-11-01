@@ -1,6 +1,8 @@
-# Board Game
+# Traversal
 
-**[Jouer en ligne](https://angelhydro.github.io/Traversal/)**
+*Projet d'origine : « Board Game ».*
+
+**[Jouer en ligne](https://angelhydro.github.io/Traversal/)** · **[Règles du jeu](REGLES.md)**
 
 A novel board game that addresses issues prominent in many games, but particularly classical games, such as chess and go.
 
