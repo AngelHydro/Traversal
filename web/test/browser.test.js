@@ -7,8 +7,10 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { extname } from 'node:path';
 import * as THREE from '../vendor/three.module.js';
-import { boardBounds } from '../terrain.js';
-import { boardSphere, fitCamera, HEIGHT_UNIT } from '../camera.js';
+import { generateBoard, makeRng } from '../terrain.js';
+import { dealBoard, newGame, actionsFor, applyAction } from '../rules.js';
+import { square } from '../play.js';
+import { boardSphere, fitCamera, HEIGHT_UNIT, VIEW_DIR } from '../camera.js';
 
 let chromium = null;
 try { ({ chromium } = createRequire(import.meta.url)('playwright')); } catch { /* not installed */ }
@@ -20,9 +22,11 @@ const W = 1000, H = 700;
 async function serve() {
   const server = createServer(async (req, res) => {
     try {
-      const path = new URL('.' + (req.url === '/' ? '/index.html' : req.url.split('?')[0]), ROOT);
+      const name = req.url.split('?')[0];
+      const path = new URL('.' + (name === '/' ? '/index.html' : name), ROOT);
+      const body = await readFile(path);   // read first: a missing file must still get a clean 404
       res.writeHead(200, { 'content-type': TYPES[extname(path.pathname)] || 'application/octet-stream' });
-      res.end(await readFile(path));
+      res.end(body);
     } catch { res.writeHead(404).end(); }
   });
   await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
@@ -35,7 +39,7 @@ async function serve() {
 function projector(board, rect) {
   const s = boardSphere(board);
   const aspect = rect.width / rect.height;
-  const { position, target } = fitCamera(s.center, s.radius, 45, aspect, [0, 13, 13]);
+  const { position, target } = fitCamera(s.center, s.radius, 45, aspect, VIEW_DIR);
   const cam = new THREE.PerspectiveCamera(45, aspect, 0.1, 200);
   cam.position.fromArray(position); cam.lookAt(...target); cam.updateMatrixWorld();
   return (r, c, dz, dy) => {
@@ -52,44 +56,46 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     const errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    // A numbered board is reproducible: the test rebuilds the very same one to aim its clicks.
+    await page.goto(`http://127.0.0.1:${server.address().port}/?terrain=woods&plateau=5`);
     await page.waitForFunction(() => document.getElementById('status').textContent !== '');
-    assert.equal(await page.textContent('#status'), 'Au tour des noirs');
+    assert.equal(await page.textContent('#status'), 'Au tour du joueur 1 (rouge)');
+    assert.match(await page.textContent('#score'), /Plateau n° 5/);
+    const rng = makeRng(5);
+    const board = dealBoard(() => generateBoard('woods', rng));
 
-    await page.selectOption('#landscape', '14'); // Fosse des Mariannes: fixed heights
-    await page.waitForTimeout(300);
     const canvas = page.locator('#view canvas');
     const rect0 = await canvas.boundingBox();
     // The panel is above the view, not over it.
     const panel = await page.locator('#panel').boundingBox();
     assert.ok(panel.y + panel.height <= (await page.locator('#view').boundingBox()).y);
-    const move = async (from, to) => {
-      // Select on the piece itself, then aim at the far half of the target, the part a player sees.
-      for (const [cell, dz, dy] of [[from, 0, 0.2], [to, -0.25, 0.02]]) {
-        const [x, y] = projector(boardBounds().min, await canvas.boundingBox())(...cell, dz, dy);
-        await page.mouse.click(x, y);
-        await page.waitForTimeout(100);
-      }
-    };
-    // Every refused action explains itself: help is visible, a wrong-side click says whose turn it is,
-    // a new game is confirmed.
-    assert.match(await page.textContent('#help'), /pièce.*case jaune/);
-    {
-      const [x, y] = projector(boardBounds().min, await canvas.boundingBox())(10, 1, 0, 0.2);
+    // Select on the piece itself (dy 0.25); aim at the far half of a target plate (0.04 thick, dy 0.02).
+    const click = async ([r, c], dz, dy) => {
+      const [x, y] = projector(board, await canvas.boundingBox())(r, c, dz, dy);
       await page.mouse.click(x, y);
-      assert.match(await page.textContent('#last'), /Au tour des noirs.*pièce noire/);
-    }
-    await page.click('#new');
-    assert.match(await page.textContent('#last'), /Nouvelle partie.*Fosse des Mariannes.*noirs commencent/);
+      await page.waitForTimeout(100);
+    };
+    const play = async (g, id, pick) => {
+      const piece = g.pieces.find((p) => p.id === id);
+      const action = actionsFor(g, piece).filter((a) => a.kind === 'move' && !a.special).sort(pick)[0];
+      await click([piece.r, piece.c], 0, 0.25);
+      await click(action.to, -0.25, 0.02);
+      assert.match(await page.textContent('#last'), new RegExp(`${square(piece.r, piece.c)} → ${square(...action.to)}`));
+      return applyAction(g, id, action);
+    };
 
-    // Column a is the trench's flat rim (height -2 everywhere), so no piece hides behind a column.
-    // Black and red walk towards each other along it, then black captures.
-    for (const [b, r] of [[1, 10], [2, 9], [3, 8], [4, 7]]) { await move([b, 1], [b + 1, 1]); await move([r, 1], [r - 1, 1]); }
-    await move([5, 1], [6, 1]);
-    assert.equal(await page.textContent('#status'), 'Au tour des rouges');
-    assert.match(await page.textContent('#captures'), /noirs : 1, rouges : 0/);
-    assert.match(await page.textContent('#last'), /soldat noirs a5 → a6, capture un soldat/);
-    assert.deepEqual(await canvas.boundingBox(), rect0, 'the view must not jump when the first move is shown');
+    // Refused actions explain themselves: help is there, a click on the wrong side says whose turn it is.
+    assert.match(await page.textContent('#help'), /case jaune.*rouge pour attaquer/);
+    await click([1, 5], 0, 0.25);
+    assert.match(await page.textContent('#last'), /Au tour du joueur 1 \(rouge\)/);
+
+    // Red's explorer steps straight ahead, then blue's sentinel moves.
+    let g = newGame(board);
+    g = await play(g, 'red-2', (a, b) => Math.abs(a.to[1] - 5) - Math.abs(b.to[1] - 5) || b.to[0] - a.to[0]);
+    assert.match(await page.textContent('#status'), /joueur 2 \(bleu\)/);
+    g = await play(g, 'blue-0', (a, b) => Math.abs(a.to[1] - 3) - Math.abs(b.to[1] - 3) || a.to[0] - b.to[0]);
+    assert.match(await page.textContent('#score'), /Coup 2\/200/);
+    assert.deepEqual(await canvas.boundingBox(), rect0, 'the view must not jump while playing');
     assert.deepEqual(errors, []);
 
     // A lost WebGL context is reported, and the banner goes away once the browser restores it.
@@ -109,7 +115,7 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
       sel.dispatchEvent(new Event('change'));
     });
     await page.waitForSelector('#error:not([hidden])');
-    assert.match(await page.textContent('#error'), /Une erreur est survenue.*Terrain inconnu/);
+    assert.match(await page.textContent('#error'), /Une erreur est survenue/);
     await lose.evaluate((x) => x.loseContext());
     await lose.evaluate((x) => x.restoreContext());
     await page.waitForTimeout(300);

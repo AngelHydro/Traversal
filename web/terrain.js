@@ -1,27 +1,38 @@
-// Terrain generation, ported from game.py (gen_board, gen_mix_board, check_board, board_scramble).
+// Terrain generation, built on game.py's generator (gen_board, gen_mix_board, check_board).
 // Board is SIZE x SIZE with a fixed border at height 0; playable cells are 1..10.
 
 export const SIZE = 12;
 
-export const LANDSCAPES = [
-  { id: 1, group: 'Montagnes', name: 'Montagnes hautes', kind: 'scramble', factor: 0.15 },
-  { id: 2, group: 'Montagnes', name: 'Montagnes moyennes', kind: 'scramble', factor: 0.225 },
-  { id: 3, group: 'Montagnes', name: 'Montagnes basses', kind: 'scramble', factor: 0.3 },
-  { id: 4, group: 'Forêts', name: 'Forêts hautes', kind: 'scramble', factor: 0.4 },
-  { id: 5, group: 'Forêts', name: 'Forêts moyennes', kind: 'scramble', factor: 0.5 },
-  { id: 6, group: 'Forêts', name: 'Forêts basses', kind: 'scramble', factor: 0.6 },
-  { id: 7, group: 'Vallées', name: 'Vallées hautes', kind: 'scramble', factor: 0.7 },
-  { id: 8, group: 'Vallées', name: 'Vallées moyennes', kind: 'scramble', factor: 0.775 },
-  { id: 9, group: 'Vallées', name: 'Vallées basses', kind: 'scramble', factor: 0.85 },
-  { id: 10, group: 'Spécial', name: 'Mont Everest', kind: 'max' },
-  { id: 11, group: 'Spécial', name: 'Gasherbrum I', kind: 'scramble', factor: 0.1 },
-  { id: 12, group: 'Spécial', name: 'Montagnes et vallées', kind: 'mix', factor: 0.5 },
-  { id: 13, group: 'Spécial', name: 'Fosse des Kouriles', kind: 'scramble', factor: 0.9 },
-  { id: 14, group: 'Spécial', name: 'Fosse des Mariannes', kind: 'min' },
+/**
+ * Terrain modes from the rules. Each is a recipe for the game.py generator; 'random' picks one of the others.
+ * scramble: +1/-1 pushes biased by `factor` (low = mostly up), `push` per ring pass; mix: half rises, half sinks;
+ * peaks: a flat plain with a few hills.
+ */
+export const MODES = [
+  { id: 'random', name: 'Aléatoire', hint: 'Variété équilibrée de terrains' },
+  { id: 'mountains', name: 'Montagnes', hint: 'Pics centraux spectaculaires', kind: 'scramble', factor: 0.225, push: 150 },
+  { id: 'valleys', name: 'Vallées', hint: 'Cuvettes profondes bordées de crêtes', kind: 'scramble', factor: 0.775, push: 150 },
+  { id: 'highlands', name: 'Hautes terres', hint: 'Montagnes et vallées réunies', kind: 'mix' },
+  { id: 'woods', name: 'Bois', hint: 'Plutôt plat, collines douces', kind: 'scramble', factor: 0.5, push: 25 },
+  { id: 'desert', name: 'Désert', hint: 'Étendues plates, rares pics', kind: 'peaks', peaks: 3 },
 ];
 
-/** Landscape selected when the page opens: Forêts moyennes. */
-export const DEFAULT_LANDSCAPE = 5;
+/** Mode selected when the page opens. */
+export const DEFAULT_MODE = 'random';
+
+/**
+ * Seeded uniform [0, 1) generator (mulberry32): the same seed always gives the same board.
+ * @param {number} seed
+ */
+export function makeRng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // color_stick from game.py, indexed by height + 10, three heights per color.
 const COLORS = [0x000080, 0x1e90ff, 0x8b4513, 0x008000, 0x808080, 0xffffff, 0x87ceeb];
@@ -106,21 +117,40 @@ function genMixBoard(b, rng, push) {
   }
 }
 
+// A few hills on a flat plain: repeated +1 pushes in a 3x3 window around random centres.
+function genPeaks(b, rng, peaks) {
+  for (let k = 0; k < peaks; k++) {
+    const ci = randInt(rng, 2, 6), cj = randInt(rng, 2, 10); // top half: the board is mirrored afterwards
+    for (let n = 0; n < 12; n++) {
+      const i = ci + randInt(rng, -1, 2), j = cj + randInt(rng, -1, 2);
+      b[i][j] += 1;
+      if (violates(b, i, j)) b[i][j] -= 1;
+    }
+  }
+}
+
+// Fairness: both players face the same terrain. Rows 6..10 copy rows 5..1; rows 5 and 6 end up equal, and
+// the ring bounds are symmetric, so the physics stays valid.
+function mirror(b) {
+  for (let i = 1; i <= 5; i++) b[SIZE - 1 - i] = [...b[i]];
+  return b;
+}
+
 /**
- * Random board for a landscape, as game.py generates it.
- * @param {number} landscapeId id from LANDSCAPES
- * @param {() => number} [rng] uniform [0, 1) source
+ * Random fair board for a terrain mode, built with game.py's generator then mirrored top/bottom.
+ * @param {string} modeId id from MODES
+ * @param {() => number} [rng] uniform [0, 1) source, e.g. makeRng(seed)
  * @returns {number[][]} 12x12 heights with a 0 border
  */
-export function generateBoard(landscapeId, rng = Math.random) {
-  const l = LANDSCAPES.find((x) => x.id === landscapeId);
-  if (!l) throw new Error(`Terrain inconnu : ${landscapeId}`);
-  if (l.kind === 'max') return boardBounds().max;
-  if (l.kind === 'min') return boardBounds().min;
+export function generateBoard(modeId, rng = Math.random) {
+  let m = MODES.find((x) => x.id === modeId);
+  if (!m) throw new Error(`Terrain inconnu : ${modeId}`);
+  if (m.id === 'random') m = MODES[1 + Math.floor(rng() * (MODES.length - 1))];
   const b = grid(0);
-  if (l.kind === 'mix') genMixBoard(b, rng, 250);
-  else for (let k = 1; k <= 4; k++) genBoard(b, rng, 150, k, SIZE - k, l.factor);
-  return b;
+  if (m.kind === 'mix') genMixBoard(b, rng, 250);
+  else if (m.kind === 'peaks') genPeaks(b, rng, m.peaks);
+  else for (let k = 1; k <= 4; k++) genBoard(b, rng, m.push, k, SIZE - k, m.factor);
+  return mirror(b);
 }
 
 /** Terrain color (0xRRGGBB) for a height in -10..10, from game.py's color_stick. */

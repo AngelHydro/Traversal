@@ -1,68 +1,77 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newGameState, handleClick } from '../play.js';
+import { newGameState, handleClick, handleExit, highlights, TEAM, square } from '../play.js';
 
 const flat = () => Array.from({ length: 12 }, () => Array(12).fill(0));
-const start = (board = flat()) => newGameState(board, 'Forêts moyennes');
+const P = (id, type, team, r, c) => ({ id, type, team, r, c });
+const start = (pieces) => {
+  const s = newGameState(flat(), 'Bois');
+  return pieces ? { ...s, pieces } : s;
+};
 
-test('new game is announced with the landscape and who starts', () => {
-  assert.match(start().message, /Nouvelle partie : Forêts moyennes\. Les noirs commencent/);
+test('labels: player colors, rows numbered from the bottom', () => {
+  assert.deepEqual(TEAM, { red: 'rouge', blue: 'bleu' });
+  assert.equal(square(10, 3), 'c1');
+  assert.equal(square(1, 3), 'c10');
+});
+test('new game is announced with the terrain and who starts', () => {
+  assert.match(start().message, /Nouvelle partie : Bois\. Le joueur 1 \(rouge\) commence/);
 });
 test('clicking an opponent piece says whose turn it is', () => {
-  const s = handleClick(start(), 10, 3);
-  assert.equal(s.selected, null);
-  assert.match(s.message, /Au tour des noirs : sélectionnez une pièce noire/);
-});
-test('clicking an empty cell with nothing selected explains what to do', () => {
-  assert.match(handleClick(start(), 5, 5).message, /sélectionnez une pièce noire/);
-});
-test('selecting a piece says to pick a yellow cell', () => {
   const s = handleClick(start(), 1, 3);
-  assert.equal(s.selected, 'black-2');
-  assert.match(s.message, /case jaune/);
-});
-test('selecting a walled-in piece explains why it cannot move', () => {
-  const b = flat(); b[2][3] = 2;               // cliff in front; sides are own pieces
-  const s = handleClick(start(b), 1, 3);
   assert.equal(s.selected, null);
-  assert.match(s.message, /est bloqué.*relief/);
+  assert.match(s.message, /Au tour du joueur 1 \(rouge\)/);
 });
-test('a legal move plays, passes the turn and reports the move', () => {
-  let s = handleClick(start(), 1, 3);
-  s = handleClick(s, 2, 3);
+test('selecting a piece shows its stats and highlights moves', () => {
+  const s = handleClick(start(), 10, 4);
+  assert.equal(s.selected, 'red-1');
+  assert.match(s.message, /Avant-garde.*Mouvement 4, Force 2/);
+  assert.ok(highlights(s).moves.some(([r, c]) => r === 6 && c === 4));
+});
+test('a move plays, passes the turn and reports it', () => {
+  const s = handleClick(handleClick(start(), 10, 4), 7, 4);
+  assert.equal(s.turn, 'blue');
+  assert.match(s.message, /Avant-garde rouge d1 → d4.*Au tour du joueur 2 \(bleu\)/);
+});
+test('out of range keeps the selection and says so', () => {
+  const s = handleClick(handleClick(start(), 10, 4), 2, 9);
+  assert.equal(s.selected, 'red-1');
+  assert.match(s.message, /hors de portée/);
+});
+test('a too-weak attack is refused with the strengths', () => {
+  const pcs = [P('re', 'explorer', 'red', 5, 5), P('bs', 'sentinel', 'blue', 5, 6), P('bx', 'explorer', 'blue', 1, 1)];
+  const s = handleClick(handleClick(start(pcs), 5, 5), 5, 6);
   assert.equal(s.turn, 'red');
-  assert.match(s.message, /garde noirs c1 → c2.*Au tour des rouges/);
+  assert.match(s.message, /Attaque impossible : force 1 contre 3/);
+  assert.ok(!highlights(handleClick(start(pcs), 5, 5)).attacks.length);
 });
-test('a capture is counted', () => {
-  let s = start();
-  s = { ...s, pieces: [{ id: 'b', type: 'soldier', team: 'black', r: 5, c: 5 }, { id: 'r', type: 'medic', team: 'red', r: 5, c: 6 }, { id: 'r2', type: 'soldier', team: 'red', r: 9, c: 9 }] };
-  s = handleClick(handleClick(s, 5, 5), 5, 6);
-  assert.equal(s.captured.black, 1);
-  assert.match(s.message, /capture un médecin/);
+test('an allowed attack captures and reports the strengths', () => {
+  const pcs = [P('rs', 'sentinel', 'red', 5, 5), P('be', 'explorer', 'blue', 5, 6), P('bx', 'explorer', 'blue', 1, 1)];
+  const sel = handleClick(start(pcs), 5, 5);
+  assert.deepEqual(highlights(sel).attacks, [[5, 6]]);
+  const s = handleClick(sel, 5, 6);
+  assert.match(s.message, /Sentinelle rouge capture Explorateur bleu \(3 contre 1\)/);
 });
-test('reaching the far row wins and further clicks do nothing', () => {
-  let s = { ...start(), pieces: [{ id: 'b', type: 'soldier', team: 'black', r: 9, c: 5 }, { id: 'r', type: 'soldier', team: 'red', r: 2, c: 2 }] };
-  s = handleClick(handleClick(s, 9, 5), 10, 5);
-  assert.equal(s.winner, 'black');
-  assert.equal(handleClick(s, 2, 2), s);
+test('exit is offered on the last row and scores the strength', () => {
+  const pcs = [P('rv', 'vanguard', 'red', 1, 5), P('bx', 'explorer', 'blue', 5, 1)];
+  const sel = handleClick(start(pcs), 1, 5);
+  assert.equal(highlights(sel).canExit, true);
+  const s = handleExit(sel);
+  assert.equal(s.scores.red, 2);
+  assert.match(s.message, /Avant-garde rouge franchit l'arrivée : \+2/);
 });
-test('clicking an unreachable cell keeps the selection and says to pick a yellow cell', () => {
-  let s = handleClick(start(), 1, 3);
-  s = handleClick(s, 5, 5);
-  assert.equal(s.selected, 'black-2');
-  assert.match(s.message, /pas accessible.*case jaune/);
-});
-test('a board where black cannot move ends the game at once', () => {
-  const b = flat(); for (let c = 1; c <= 10; c++) b[2][c] = 2;
-  const s = start(b);
+test('a sentinel arriving first wins at once, then clicks do nothing', () => {
+  const pcs = [P('rs', 'sentinel', 'red', 1, 5), P('bx', 'explorer', 'blue', 5, 1)];
+  const s = handleExit(handleClick(start(pcs), 1, 5));
   assert.equal(s.winner, 'red');
-  assert.match(s.message, /Noirs bloqués : victoire des rouges/);
+  assert.match(s.message, /Sentinelle rouge arrive la première : victoire du joueur 1 \(rouge\)/);
+  assert.equal(handleClick(s, 5, 1), s);
 });
-test('the blocked-piece message is short enough for two lines on a phone', () => {
-  const b = flat(); b[2][3] = 2;
-  assert.ok(handleClick(start(b), 1, 3).message.length <= 90);
-});
-test('new-game messages fit two lines on a phone, even with the longest landscape name', () => {
-  const stuck = flat(); for (let c = 1; c <= 10; c++) stuck[2][c] = 2;
-  for (const b of [flat(), stuck]) assert.ok(newGameState(b, 'Montagnes et vallées').message.length <= 100);
+test('a blocked piece explains itself', () => {
+  const b = flat(); b[2][1] = -2; b[1][2] = -2;          // blue sentinel in a corner, surrounded by deep drops
+  const pcs = [P('bs', 'sentinel', 'blue', 1, 1), P('bv', 'vanguard', 'blue', 9, 9), P('rx', 'explorer', 'red', 5, 5)];
+  const pcs2 = [...pcs, P('w1', 'vanguard', 'blue', 2, 1), P('w2', 'vanguard', 'blue', 1, 2)];
+  const s = handleClick({ ...newGameState(b, 'Bois'), pieces: pcs2, turn: 'blue' }, 1, 1);
+  assert.equal(s.selected, null);
+  assert.match(s.message, /bloquée/);
 });

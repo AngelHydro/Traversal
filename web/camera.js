@@ -2,6 +2,12 @@
 
 /** World height of one terrain unit. */
 export const HEIGHT_UNIT = 0.5;
+/**
+ * Default viewing direction (from the board towards the camera): steep enough (~63°) that a taller
+ * row in front does not hide the far side's pieces.
+ */
+export const VIEW_DIR = [0, 2, 1];
+
 /** World y of the bottom of every column (one unit below the lowest possible height, -10). */
 export const FLOOR = -11 * HEIGHT_UNIT;
 
