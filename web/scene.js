@@ -122,8 +122,10 @@ export function createScene(container) {
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true)
-      .find((h) => h.object.userData.r !== undefined);
+    // A highlighted target wins even when a nearer column hides it (moving down towards the camera).
+    const hits = ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true);
+    const hit = hits.find((h) => highlightGroup.children.includes(h.object))
+      || hits.find((h) => h.object.userData.r !== undefined);
     if (hit) clickCb(hit.object.userData.r, hit.object.userData.c);
   });
 
