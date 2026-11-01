@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Publier sur GitHub Pages une version jouable dans le navigateur du jeu de `game.py` : terrain 3D généré aléatoirement, pièces (soldat, garde, médecin) et déplacements selon les règles d'élévation.
+**Goal:** Publier sur GitHub Pages une version jouable dans le navigateur du jeu de `game.py` : terrain 3D généré aléatoirement, pièces (soldat, garde, médecin), déplacements selon les règles d'élévation, captures, victoire et défaite.
 
 **Architecture:** Site statique sans build : `index.html` à la racine et des modules ES dans `web/`. La logique pure (génération du terrain, règles de déplacement) vit dans des modules sans dépendance au DOM, testés avec `node --test`. Le rendu Three.js et l'interface sont des couches minces au-dessus.
 
@@ -23,7 +23,7 @@
 ## Review Focus
 
 1. **Génération qui ne termine jamais** (surtout le terrain mixte) : chacun des 14 terrains doit se générer, valide, en moins d'une seconde. → test `every landscape generates a valid board` (Task 1).
-2. **Déplacements interdits acceptés** : monter de +2, descendre de −3, sortir du plateau (r/c = 0 ou 11), aller sur une case occupée. → tests `legalMoves rejects ...` (Task 2).
+2. **Coups interdits acceptés** : monter de +2, descendre de −3, sortir du plateau (r/c = 0 ou 11), aller sur sa propre pièce, capturer une pièce placée deux unités plus haut. → tests `legalMoves rejects ...` et `capture still obeys elevation` (Task 2).
 3. **Couleur aux extrêmes ±10** (Everest / fosse des Mariannes) : index hors du tableau, cubes sans couleur. → test `colorForHeight covers -10..10` (Task 1).
 4. **Faire pivoter la caméra déclenche un clic** (souris et tactile) : un glisser ne doit pas sélectionner de case. → contrôle manuel, seuil de 5 px entre `pointerdown` et `pointerup` (Task 3).
 5. **Chemins absolus ou CDN injoignable** : page blanche sous `/Traversal/`. → test `index.html uses only relative local paths`, plus un message d'erreur visible si `main.js` ne se charge pas (Task 4).
@@ -128,9 +128,13 @@ git commit -m "feat(web): port terrain generation to JS"
 
 ### Task 2: Pièces et règles de déplacement (`web/rules.js`)
 
-Règle de game.py:668-671, la même pour toutes les pièces : un pas orthogonal vers une case de même hauteur, d'une unité plus haute, ou d'une à deux unités plus basse.
+Règle de game.py:668-671, la même pour toutes les pièces : un pas orthogonal vers une case de même hauteur, d'une unité plus haute, ou d'une à deux unités plus basse. Soldat, garde et médecin ont les mêmes capacités (« Every game piece has the same basic abilities ») ; seul leur dessin change.
 
-**Choix par défaut (game.py ne le définit pas, à ajuster si besoin) :** chaque camp a 10 pièces sur sa première rangée, dans l'ordre de colonne 1 à 10 `S S G S M M S G S S` (S = soldat, G = garde, M = médecin). Les noirs sont en `r = 1` et jouent en premier (« Player 1 », `team == True` = noir dans game.py) ; les rouges sont en `r = 10`. Une pièce ne peut pas aller sur une case occupée. Pas de capture ni de condition de victoire : game.py n'en définit pas.
+**Règles décidées par le propriétaire du repo (2026-11-01), en complément de game.py :**
+- **Capture :** une pièce capture une pièce adverse en allant sur sa case, avec la même règle de déplacement. La pièce capturée est retirée du plateau. Une pièce ne peut pas aller sur une case occupée par son propre camp.
+- **Victoire :** un joueur gagne dès qu'une de ses pièces atteint la dernière rangée adverse : `r = 10` pour les noirs, `r = 1` pour les rouges.
+- **Départ :** placement fixe et identique pour les deux camps. Chaque camp a 10 pièces sur sa première rangée, dans l'ordre de colonne 1 à 10 `S S G S M M S G S S` (S = soldat, G = garde, M = médecin). La composition reste à confirmer, car game.py ne la donne pas. Les noirs sont en `r = 1` et jouent en premier (« Player 1 », `team == True` = noir dans game.py) ; les rouges sont en `r = 10`.
+- **Blocage :** un joueur qui n'a aucun coup légal à son tour perd, ce qui inclut le cas où il n'a plus de pièce. Sans cette règle, la partie ne se termine jamais quand un camp est bloqué par le relief.
 
 **Files:**
 - Create: `web/rules.js`
@@ -142,15 +146,16 @@ Règle de game.py:668-671, la même pour toutes les pièces : un pas orthogonal 
   - `type Piece = {id: string, type: 'soldier'|'guard'|'medic', team: 'black'|'red', r: number, c: number}`
   - `initialPieces(): Piece[]`
   - `canStep(fromH: number, toH: number): boolean` : vrai si `toH - fromH ∈ {1, 0, −1, −2}`
-  - `legalMoves(board: number[][], pieces: Piece[], piece: Piece): Array<[number, number]>`
-  - `movePiece(pieces: Piece[], id: string, r: number, c: number): Piece[]` : renvoie un nouveau tableau, sans modifier l'entrée.
+  - `legalMoves(board: number[][], pieces: Piece[], piece: Piece): Array<[number, number]>` : inclut les cases occupées par l'adversaire (captures), exclut celles de son propre camp.
+  - `movePiece(pieces: Piece[], id: string, r: number, c: number): Piece[]` : renvoie un nouveau tableau, sans modifier l'entrée, après avoir retiré la pièce adverse éventuellement présente en `(r, c)`.
+  - `winner(board: number[][], pieces: Piece[], toMove: 'black'|'red'): 'black'|'red'|null` : à appeler après chaque coup, avec le camp qui doit jouer ensuite. Renvoie le camp qui a une pièce sur la dernière rangée adverse ; sinon, si `toMove` n'a aucun coup légal, son adversaire ; sinon `null`.
 
 - [ ] **Step 1: Écrire les tests qui échouent**
 
 ```js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canStep, legalMoves, initialPieces, movePiece } from '../rules.js';
+import { canStep, legalMoves, initialPieces, movePiece, winner } from '../rules.js';
 import { boardBounds } from '../terrain.js';
 
 const flat = () => Array.from({ length: 12 }, () => Array(12).fill(0));
@@ -162,9 +167,32 @@ test('canStep follows the elevation rule', () => {
 test('legalMoves rejects off-board cells', () => {
   assert.deepEqual(legalMoves(flat(), [p(1, 1)], p(1, 1)).sort(), [[1, 2], [2, 1]]);
 });
-test('legalMoves rejects occupied cells', () => {
+test('legalMoves rejects own pieces, allows capturing enemies', () => {
+  const pcs = [p(5, 5), p(5, 6, 'red'), p(5, 4)];
+  const moves = legalMoves(flat(), pcs, pcs[0]);
+  assert.equal(moves.some(([r, c]) => r === 5 && c === 6), true);
+  assert.equal(moves.some(([r, c]) => r === 5 && c === 4), false);
+});
+test('capture still obeys elevation', () => {
+  const b = flat(); b[5][6] = 2;
   const pcs = [p(5, 5), p(5, 6, 'red')];
-  assert.equal(legalMoves(flat(), pcs, pcs[0]).some(([r, c]) => r === 5 && c === 6), false);
+  assert.equal(legalMoves(b, pcs, pcs[0]).some(([r, c]) => r === 5 && c === 6), false);
+});
+test('movePiece removes the captured piece', () => {
+  const pcs = [p(5, 5), p(5, 6, 'red')];
+  const out = movePiece(pcs, pcs[0].id, 5, 6);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].team, 'black');
+});
+test('winner: reaching the far row wins', () => {
+  assert.equal(winner(flat(), [p(10, 3), p(5, 5, 'red')], 'red'), 'black');
+  assert.equal(winner(flat(), [p(5, 5), p(1, 3, 'red')], 'black'), 'red');
+  assert.equal(winner(flat(), [p(5, 5), p(6, 6, 'red')], 'red'), null);
+});
+test('winner: side with no legal move loses', () => {
+  assert.equal(winner(flat(), [p(5, 5)], 'red'), 'black');   // red has no pieces
+  const b = flat(); b[4][5] = b[6][5] = b[5][4] = b[5][6] = 2;
+  assert.equal(winner(b, [p(5, 5, 'red'), p(2, 2)], 'red'), 'black');
 });
 test('legalMoves rejects climbing 2', () => {
   const b = boardBounds().max;           // [1][1]=2, [2][2]=4
@@ -193,13 +221,13 @@ Expected: FAIL, `Cannot find module .../web/rules.js`
 - [ ] **Step 4: Vérifier que les tests passent**
 
 Run: `node --test web/test/`
-Expected: PASS, 10 tests
+Expected: PASS, 14 tests
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add web/rules.js web/test/rules.test.js
-git commit -m "feat(web): piece movement rules"
+git commit -m "feat(web): movement, capture and win rules"
 ```
 
 ---
@@ -249,7 +277,8 @@ git commit -m "feat(web): Three.js board and piece rendering"
 
 Interface de la page :
 - Un `<select>` des terrains regroupés par `group` (`<optgroup>`), un bouton « Nouvelle partie », l'indication « Au tour des noirs / rouges », et le canvas en plein écran.
-- Boucle de jeu : un clic sur une pièce du camp actif la sélectionne et surligne ses `legalMoves`. Un clic sur une case surlignée la déplace et passe la main à l'autre camp. Tout autre clic annule la sélection.
+- Boucle de jeu : un clic sur une pièce du camp actif la sélectionne et surligne ses `legalMoves`. Un clic sur une case surlignée appelle `movePiece` (avec capture éventuelle), puis `winner(board, pieces, autreCamp)`. S'il y a un gagnant, la page affiche « Victoire des noirs / rouges » et ignore les clics jusqu'à « Nouvelle partie » ; sinon, la main passe à l'autre camp. Tout autre clic annule la sélection.
+- Un compteur de pièces capturées par camp, à côté de l'indication de tour.
 - Un `<noscript>` et un `<div id="error" hidden>`, rendu visible par `window.onerror` et par le `onerror` du script module, avec le texte « Impossible de charger le jeu (connexion au CDN ?) ».
 - Importmap dans `index.html`, avec les URL des Global Constraints.
 
@@ -278,10 +307,10 @@ Expected: FAIL, `ENOENT ... index.html`
 - [ ] **Step 4: Vérifier**
 
 Run: `node --test web/test/`
-Expected: PASS, 11 tests
+Expected: PASS, 15 tests
 
-Run: `python3 -m http.server 8000`, ouvrir la page, choisir « Montagnes et vallées », jouer deux coups (un noir, un rouge).
-Expected : le tour alterne, seules les cases légales sont surlignées et la console ne montre aucune erreur.
+Run: `python3 -m http.server 8000`, ouvrir la page, choisir « Forêts moyennes » et jouer jusqu'à une capture, puis jusqu'à ce qu'une pièce atteigne le camp adverse.
+Expected : le tour alterne et seules les cases légales sont surlignées. La pièce capturée disparaît et le compteur augmente. « Victoire des … » s'affiche, et plus aucun clic ne joue avant « Nouvelle partie ». La console ne montre aucune erreur.
 
 - [ ] **Step 5: Commit**
 
