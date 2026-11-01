@@ -25,7 +25,7 @@ test('selecting a walled-in piece explains why it cannot move', () => {
   const b = flat(); b[2][3] = 2;               // cliff in front; sides are own pieces
   const s = handleClick(start(b), 1, 3);
   assert.equal(s.selected, null);
-  assert.match(s.message, /ne peut pas bouger/);
+  assert.match(s.message, /est bloqué.*relief/);
 });
 test('a legal move plays, passes the turn and reports the move', () => {
   let s = handleClick(start(), 1, 3);
@@ -45,4 +45,20 @@ test('reaching the far row wins and further clicks do nothing', () => {
   s = handleClick(handleClick(s, 9, 5), 10, 5);
   assert.equal(s.winner, 'black');
   assert.equal(handleClick(s, 2, 2), s);
+});
+test('clicking an unreachable cell keeps the selection and says to pick a yellow cell', () => {
+  let s = handleClick(start(), 1, 3);
+  s = handleClick(s, 5, 5);
+  assert.equal(s.selected, 'black-2');
+  assert.match(s.message, /pas accessible.*case jaune/);
+});
+test('a board where black cannot move ends the game at once', () => {
+  const b = flat(); for (let c = 1; c <= 10; c++) b[2][c] = 2;
+  const s = start(b);
+  assert.equal(s.winner, 'red');
+  assert.match(s.message, /noirs ne peuvent pas bouger.*Victoire des rouges/);
+});
+test('the blocked-piece message is short enough for two lines on a phone', () => {
+  const b = flat(); b[2][3] = 2;
+  assert.ok(handleClick(start(b), 1, 3).message.length <= 90);
 });

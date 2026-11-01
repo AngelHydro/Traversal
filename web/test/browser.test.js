@@ -91,6 +91,15 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     assert.match(await page.textContent('#last'), /soldat noirs a5 → a6, capture un soldat/);
     assert.deepEqual(await canvas.boundingBox(), rect0, 'the view must not jump when the first move is shown');
     assert.deepEqual(errors, []);
+
+    // A lost WebGL context is reported, and the banner goes away once the browser restores it.
+    const lose = await page.evaluateHandle(() =>
+      document.querySelector('#view canvas').getContext('webgl2').getExtension('WEBGL_lose_context'));
+    await lose.evaluate((x) => x.loseContext());
+    await page.waitForSelector('#error:not([hidden])');
+    assert.match(await page.textContent('#error'), /interrompu/);
+    await lose.evaluate((x) => x.restoreContext());
+    await page.waitForSelector('#error[hidden]', { state: 'attached' });
   } finally {
     await browser.close();
     server.close();

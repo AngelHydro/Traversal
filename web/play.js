@@ -2,7 +2,8 @@
 // says why, so the game never looks unresponsive.
 import { initialPieces, legalMoves, movePiece, winner, other } from './rules.js';
 
-const TEAM = { black: 'noirs', red: 'rouges' };
+/** Display names of the two sides. */
+export const TEAM = { black: 'noirs', red: 'rouges' };
 const ONE = { black: 'pièce noire', red: 'pièce rouge' };
 const PIECE = { soldier: 'soldat', guard: 'garde', medic: 'médecin' };
 const square = (r, c) => 'abcdefghij'[c - 1] + r; // column letter + row number
@@ -13,10 +14,14 @@ const yourTurn = (team) => `Au tour des ${TEAM[team]} : sélectionnez une ${ONE[
  * @param {number[][]} board @param {string} landscapeName shown in the announcement
  */
 export function newGameState(board, landscapeName) {
+  const pieces = initialPieces();
+  const won = winner(board, pieces, 'black'); // a dealt board can still wall black in
   return {
-    board, pieces: initialPieces(), turn: 'black', selected: null, winner: null,
+    board, pieces, turn: 'black', selected: null, winner: won,
     captured: { black: 0, red: 0 },
-    message: `Nouvelle partie : ${landscapeName}. Les noirs commencent : sélectionnez une pièce noire.`,
+    message: `Nouvelle partie : ${landscapeName}. ` + (won
+      ? `Les noirs ne peuvent pas bouger. Victoire des ${TEAM[won]} ! Relancez une partie.`
+      : 'Les noirs commencent : sélectionnez une pièce noire.'),
   };
 }
 
@@ -49,12 +54,14 @@ export function handleClick(state, r, c) {
   }
 
   const here = state.pieces.find((q) => q.r === r && q.c === c);
+  if (sel && (!here || here.team !== state.turn))
+    return { ...state, message: 'Cette case n\'est pas accessible : cliquez une case jaune, ou une autre de vos pièces.' };
   if (!here || here.team !== state.turn || here.id === state.selected)
     return { ...state, selected: null, message: yourTurn(state.turn) };
 
   const moves = legalMoves(state.board, state.pieces, here);
   if (moves.length === 0)
     return { ...state, selected: null,
-      message: `Ce ${PIECE[here.type]} ne peut pas bouger : relief trop haut (on monte d'un niveau au plus) ou cases voisines occupées. Choisissez une autre pièce.` };
+      message: `Ce ${PIECE[here.type]} est bloqué (relief trop haut ou voisins occupés) : choisissez-en un autre.` };
   return { ...state, selected: here.id, message: `${PIECE[here.type][0].toUpperCase()}${PIECE[here.type].slice(1)} sélectionné : cliquez une case jaune pour le déplacer.` };
 }

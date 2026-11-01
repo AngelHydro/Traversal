@@ -22,7 +22,7 @@
   #status.black::before { background: #111; }
   #status.red::before { background: #cc0000; }
   #help { width: 100%; margin: 0; font-size: 12px; color: #555; }
-  #last { width: 100%; font-size: 13px; min-height: 2.8em; } /* reserved: no layout jump on the first move */
+  #last { width: 100%; font-size: 13px; height: 2.8em; overflow-y: auto; } /* fixed: messages never resize the view */
   #captures { width: 100%; font-size: 13px; color: #444; }
   #error { position: fixed; bottom: 12px; left: 12px; right: 12px; padding: 10px; background: #fee; color: #900; border-radius: 6px; }
 </style>
@@ -38,7 +38,7 @@
   <h1>Traversal</h1>
   <select id="landscape" aria-label="Terrain"></select>
   <button id="new">Nouvelle partie</button>
-  <div id="status" aria-live="polite"></div>
+  <div id="status"></div>
   <div id="last" aria-live="polite"></div>
   <div id="captures"></div>
   <p id="help">Cliquez une pièce de votre camp, puis une case jaune pour la déplacer. Glissez pour tourner autour du plateau, molette ou pincement pour zoomer.</p>

@@ -21,16 +21,10 @@ test('error banner is only for load failures', () => {
   assert.doesNotMatch(html, /window\.onerror/);
 });
 test('moves are announced to screen readers', () => {
-  assert.match(html, /id="status"[^>]*aria-live="polite"/);
-  assert.match(html, /id="last"/);
+  assert.match(html, /id="last"[^>]*aria-live="polite"/);
+  assert.doesNotMatch(html, /id="status"[^>]*aria-live/);   // the message already names the turn
 });
 test('main.js reports a missing WebGL instead of a blank page', () => {
   const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
   assert.match(main, /catch[\s\S]*WebGL/);
-});
-test('any startup error is shown with its detail, not a blank page', () => {
-  const main = readFileSync(new URL('../main.js', import.meta.url), 'utf8');
-  assert.match(main, /function showError\(/);
-  assert.match(main, /catch \(e\) \{\s*showError\(/);
-  assert.match(main, /webglcontextlost/);
 });

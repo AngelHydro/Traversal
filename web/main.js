@@ -1,10 +1,9 @@
 // Page wiring: landscape choice, clicks, and what the player is told.
 import { LANDSCAPES, DEFAULT_LANDSCAPE, generateBoard } from './terrain.js';
 import { dealBoard } from './rules.js';
-import { newGameState, handleClick, targets } from './play.js';
+import { newGameState, handleClick, targets, TEAM } from './play.js';
 import { createScene } from './scene.js';
 
-const TEAM = { black: 'noirs', red: 'rouges' };
 const $ = (id) => document.getElementById(id);
 
 // Shown instead of a blank page when the game cannot start; the detail helps diagnose a browser.
@@ -45,17 +44,23 @@ function newGame() {
   render();
 }
 
+// Errors in event handlers are shown too, so the game never silently stops responding.
+const guarded = (fn) => (...args) => {
+  try { fn(...args); } catch (e) { showError('Une erreur est survenue.', e); throw e; }
+};
+
 try {
   view = createScene($('view'));
-  // The GPU can drop the context later (driver reset, too many tabs): say so instead of freezing.
+  // The GPU can drop the context (driver reset, too many tabs): say so, and clear it once restored.
   $('view').addEventListener('webglcontextlost', () =>
-    showError('Le rendu 3D a été interrompu par le navigateur. Rechargez la page pour reprendre.'), true);
-  view.onCellClick((r, c) => {
+    showError('Le rendu 3D a été interrompu par le navigateur. Rechargez la page si le plateau ne revient pas.'), true);
+  $('view').addEventListener('webglcontextrestored', () => { $('error').hidden = true; }, true);
+  view.onCellClick(guarded((r, c) => {
     state = handleClick(state, r, c);
     render();
-  });
-  $('new').addEventListener('click', newGame);
-  select.addEventListener('change', newGame);
+  }));
+  $('new').addEventListener('click', guarded(newGame));
+  select.addEventListener('change', guarded(newGame));
   newGame();
 } catch (e) {
   showError(/WebGL/i.test(String(e && e.message)) ? NO_WEBGL : 'Impossible de démarrer le jeu.', e);
