@@ -7,7 +7,7 @@
 <style>
   :root { --bg: #dfe9f3; --panel: rgba(255,255,255,.9); --text: #1a1a1a; --muted: #555; --accent: #cc0000; --field: #fff; }
   :root[data-theme="dark"] { --bg: #15181d; --panel: rgba(32,36,43,.94); --text: #e8eaed; --muted: #a9b0bb; --accent: #ff6b6b; --field: #262b33; }
-  select, button { color: var(--text); background: var(--field); border: 1px solid color-mix(in srgb, var(--text) 30%, transparent); border-radius: 4px; }
+  select, button { color: var(--text); background: var(--field); border: 1px solid rgba(128,128,128,.5); border: 1px solid color-mix(in srgb, var(--text) 30%, transparent); border-radius: 4px; } /* first border: browsers without color-mix() */
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
   body { display: flex; flex-direction: column; }
   /* The panel sits above the 3D view, never over it, so it cannot hide the back row. */

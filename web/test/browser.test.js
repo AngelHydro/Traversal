@@ -9,7 +9,7 @@ import { extname } from 'node:path';
 import * as THREE from '../vendor/three.module.js';
 import { generateBoard, makeRng } from '../terrain.js';
 import { newGame, actionsFor, applyAction } from '../rules.js';
-import { square } from '../play.js';
+import { square, newGameState, actionChoices, playChoice } from '../play.js';
 import { boardBox, fitCamera, HEIGHT_UNIT, VIEW_DIR } from '../camera.js';
 
 let chromium = null;
@@ -134,6 +134,50 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     await page.waitForTimeout(300);
     assert.match(await page.textContent('#error'), /Une erreur est survenue/);
     assert.equal(await page.$eval('#error', (e) => e.hidden), false);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+test('a piece exits by clicking the cell past the finish line', { skip: !chromium && 'playwright not installed' }, async () => {
+  const server = await serve();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: W, height: H } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`http://127.0.0.1:${server.address().port}/?terrain=woods&plateau=5`);
+    await page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    const board = generateBoard('woods', makeRng(5));
+    let g = newGameState(board, 'Bois');                 // mirrors the page, move for move
+    await page.click('#keyboard summary');
+    const playKeyboard = async (choice) => {
+      await page.selectOption('#choices', { index: actionChoices(g).findIndex((x) => x.label === choice.label) });
+      await page.click('#play');
+      g = playChoice(g, choice);
+    };
+    // Red runs its explorer up the board (blue plays its first listed move) until it can exit.
+    const explorer = () => g.pieces.find((p) => p.id === 'red-2');
+    for (let turn = 0; turn < 8 && !actionChoices(g).some((c) => c.pieceId === 'red-2' && c.action.kind === 'exit'); turn++) {
+      const mine = actionChoices(g).filter((c) => c.pieceId === 'red-2' && c.action.kind === 'move');
+      await playKeyboard(mine.sort((a, b) => a.action.to[0] - b.action.to[0])[0]);
+      await playKeyboard(actionChoices(g)[0]);
+    }
+    const exit = actionChoices(g).find((c) => c.pieceId === 'red-2' && c.action.kind === 'exit');
+    assert.ok(exit, 'the explorer reached the finish line');
+    await page.waitForTimeout(1200);                     // let the walk animations end
+    const canvas = page.locator('#view canvas');
+    const at = projector(board, await canvas.boundingBox());
+    const e = explorer();
+    await page.mouse.click(...at(e.r, e.c, 0, 0.25));
+    await page.waitForTimeout(150);
+    const [, c] = exit.action.to;                        // the exit plate sits past row 1, at row 1's height
+    await page.mouse.click(...at(1, c, -1.1, 0.02));
+    await page.waitForTimeout(150);
+    assert.match(await page.textContent('#last'), /Explorateur rouge franchit l'arrivée : \+1/);
+    assert.match(await page.textContent('#score'), /rouge 1/);
+    assert.deepEqual(errors, []);
   } finally {
     await browser.close();
     server.close();

@@ -56,6 +56,7 @@ function textTexture(text, color = '#ffffff') {
 function label(text, size, opacity = 0.9) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size),
     new THREE.MeshBasicMaterial({ map: textTexture(text), transparent: true, opacity, depthWrite: false }));
+  m.material.userData.own = true;                 // not shared: disposed with the label (textures stay cached)
   m.rotation.x = -Math.PI / 2;
   return noPick(m);
 }
@@ -90,7 +91,8 @@ function notches(height, levels) {
   return noPick(new THREE.LineSegments(geo, NOTCH()));
 }
 
-const disposeGeometries = (o) => o.traverse((x) => x.geometry?.dispose());
+// Frees geometries, and the materials that belong to one object only (labels); shared materials stay.
+const disposeGeometries = (o) => o.traverse((x) => { x.geometry?.dispose(); if (x.material?.userData.own) x.material.dispose(); });
 
 /**
  * Mounts the 3D view in `container`. Throws when WebGL is unavailable.
@@ -132,9 +134,16 @@ export function createScene(container) {
   // Tweens: update(k) with k going 0 -> 1 over `ms`, then done().
   let tweens = [];
   function tween(ms, update, done = () => {}, delay = 0) {
-    if (!animate) { update(1); done(); return; }
-    tweens.push({ start: performance.now() + delay, ms, update, done });
+    if (!animate) { update(1); done(); return null; }
+    const t = { start: performance.now() + delay, ms, update, done };
+    tweens.push(t);
+    return t;
   }
+  const cancel = (t) => { if (t) tweens = tweens.filter((x) => x !== t); };
+  const walks = new Map();   // object -> its running walk tween (one walk at a time per object)
+  let turning = null;        // the running camera turn
+  let userMoved = false;     // the player has rotated or zoomed since the board was drawn
+  controls.addEventListener('start', () => { userMoved = true; });
   function runTweens(now) {
     tweens = tweens.filter((t) => {
       if (now < t.start) return true;
@@ -147,13 +156,17 @@ export function createScene(container) {
   }
 
   // Frame the whole board, keeping the current viewing direction, and limit the zoom around that view.
-  function frame() {
+  // With move = false (window resized after the player rotated or zoomed) only the zoom limits follow:
+  // the player's own view is kept, clamped into the new limits by the controls.
+  function frame(move = true) {
     if (!box) return;
     const dir = camera.position.clone().sub(controls.target).toArray();
     const { position, target } = fitCamera(box.center, box.half, camera.fov, camera.aspect, dir);
-    camera.position.fromArray(position);
-    controls.target.fromArray(target);
-    const { min, max } = zoomLimits(camera.position.distanceTo(controls.target));
+    if (move) {
+      camera.position.fromArray(position);
+      controls.target.fromArray(target);
+    }
+    const { min, max } = zoomLimits(Math.hypot(...position.map((x, i) => x - target[i])));
     controls.minDistance = min;
     controls.maxDistance = max;
     controls.update();
@@ -165,13 +178,28 @@ export function createScene(container) {
   const groundY = (r, c) => top(board[Math.min(10, Math.max(1, r))][c]); // rows 0 / 11 sit at the edge row's height
   const at = (r, c, lift = 0) => new THREE.Vector3(cx(c), groundY(r, c) + lift, cz(r));
 
-  /** Draws a board. options: { palette: 'soft'|'classic', heightMarks: 'notches'|'numbers' } */
-  function setBoard(b, { palette = 'soft', heightMarks = 'notches' } = {}) {
+  /** Draws a new board (new game): resets pieces, animations and the camera framing. style: see restyle. */
+  function setBoard(b, style) {
     board = b;
     tweens = [];
+    walks.clear();
+    turning = null;
+    userMoved = false;
     moving.clear();
-    for (const group of [boardGroup, pieceGroup, highlightGroup, effectGroup]) clear(group);
+    for (const group of [pieceGroup, highlightGroup, effectGroup]) clear(group);
     pieceMeshes.clear();
+    restyle(style);
+    box = boardBox(b);
+    frame();
+  }
+
+  /**
+   * Redraws the terrain only (a setting changed): pieces, animations and the camera stay as they are.
+   * style: { palette: 'soft'|'classic', heightMarks: 'notches'|'numbers' }
+   */
+  function restyle({ palette = 'soft', heightMarks = 'notches' } = {}) {
+    const b = board;
+    clear(boardGroup);
     const FLOOR = floorFor(b);
     for (let r = 1; r <= 10; r++)
       for (let c = 1; c <= 10; c++) {
@@ -187,7 +215,8 @@ export function createScene(container) {
           col.add(notches(h, levels));
         } else {
           const n = label(String(b[r][c]), 0.34, 0.85);
-          n.position.set(-0.32, h / 2 + 0.004, 0.32);   // a corner of the top face: pieces stand in the middle
+          // A corner of the top face (pieces stand in the middle), above the 0.04 highlight plates.
+          n.position.set(-0.32, h / 2 + 0.045, 0.32);
           col.add(n);
         }
         boardGroup.add(col);
@@ -199,8 +228,6 @@ export function createScene(container) {
         strip.position.set(cx(c), top(b[row][c]) + 0.016, cz(row) + side);
         boardGroup.add(strip);
       }
-    box = boardBox(b);
-    frame();
   }
 
   function setPieces(pieces, selectedId, turn) {
@@ -254,15 +281,18 @@ export function createScene(container) {
   const dispose = (g) => { effectGroup.remove(g); g.traverse((x) => { x.geometry?.dispose(); x.material?.dispose(); }); };
 
   // The piece hops cell by cell along `path` ([[r, c], ...]); `then` runs when it arrives.
+  // A new walk replaces a running one for the same object (its `then` is dropped with it).
   function walk(obj, path, then = () => {}) {
     const pts = path.map(([r, c]) => at(r, c));
     const ms = STEP_MS * Math.max(1, pts.length - 1);
-    tween(ms, (k) => {
-      const f = k * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(f)), t = f - i;
+    cancel(walks.get(obj));
+    const t = tween(ms, (k) => {
+      const f = k * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(f)), s = f - i;
       if (pts.length < 2) return;
-      obj.position.lerpVectors(pts[i], pts[i + 1], t);
-      obj.position.y += Math.sin(Math.PI * t) * 0.18;
-    }, then);
+      obj.position.lerpVectors(pts[i], pts[i + 1], s);
+      obj.position.y += Math.sin(Math.PI * s) * 0.18;
+    }, () => { walks.delete(obj); then(); });
+    if (t) walks.set(obj, t);
     return ms;
   }
 
@@ -306,8 +336,10 @@ export function createScene(container) {
     const from = spherical.theta;                         // three.js azimuth: 0 = looking from +z (red side)
     const to = team === 'red' ? 0 : Math.PI;
     const delta = ((((to - from) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI; // shortest turn
+    cancel(turning);                                     // a new turn starts from where the last one stopped
+    turning = null;
     if (Math.abs(delta) < 1e-3) return;
-    tween(700, (k) => {
+    turning = tween(700, (k) => {
       const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
       const s = spherical.clone();
       s.theta = from + delta * e;
@@ -340,13 +372,13 @@ export function createScene(container) {
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    frame();
+    frame(!userMoved);
   }).observe(container);
 
   renderer.setAnimationLoop((now) => { runTweens(now); controls.update(); renderer.render(scene, camera); });
 
   return {
-    setBoard, setPieces, setHighlights, playMove, faceTeam, setTheme,
+    setBoard, restyle, setPieces, setHighlights, playMove, faceTeam, setTheme,
     setAnimations: (on) => { animate = on; },
     onCellClick: (cb) => { clickCb = cb; },
   };

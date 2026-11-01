@@ -41,7 +41,7 @@ function applySettings({ redraw }) {
   document.documentElement.dataset.theme = isDark() ? 'dark' : 'light';
   view.setTheme(isDark());
   view.setAnimations(settings.animations && !reducedMotion.matches);
-  if (redraw && state) { view.setBoard(state.board, settings); if (settings.rotateCamera) view.faceTeam(state.turn); }
+  if (redraw && state) view.restyle(settings);
   if (state) render();
 }
 
@@ -108,11 +108,12 @@ function setupSettings() {
     const before = settings;
     settings = { ...settings, [f.name]: f.type === 'checkbox' ? f.checked : f.value };
     saveSettings(storage, settings);
-    applySettings({ redraw: settings.palette !== before.palette || settings.heightMarks !== before.heightMarks
-      || (settings.rotateCamera && !before.rotateCamera) });
+    applySettings({ redraw: settings.palette !== before.palette || settings.heightMarks !== before.heightMarks });
+    if (settings.rotateCamera && !before.rotateCamera && !state.winner) view.faceTeam(state.turn);
   }));
   $('open-settings').addEventListener('click', () => $('settings').showModal());
   darkQuery.addEventListener('change', () => applySettings({ redraw: false }));
+  reducedMotion.addEventListener('change', () => applySettings({ redraw: false }));
 }
 
 // Errors in event handlers are shown too, so the game never silently stops responding.
