@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  PIECES, stepCost, initialPieces, actionsFor, newGame, applyAction, limitResult, MOVE_LIMIT,
+  PIECES, stepCost, initialPieces, actionsFor, newGame, applyAction, limitResult, MOVE_LIMIT, pathTo,
 } from '../rules.js';
 
 const flat = () => Array.from({ length: 12 }, () => Array(12).fill(0));
@@ -152,4 +152,35 @@ test('a side with no legal action passes its turn', () => {
   assert.equal(actionsFor(g, blue).filter((a) => a.kind !== 'attack' || a.allowed).length, 0);
   const s = applyAction(g, 'rm', find(actionsFor(g, red), 'move', 8, 9));
   assert.deepEqual([s.turn, s.passed], ['red', 'blue']);
+});
+
+test('exit is a step onto the cell just past the finish line, one per reachable column, with its cost', () => {
+  const v = P('rv', 'vanguard', 'red', 2, 5);                  // red exits past row 1, into row 0
+  const exits = actionsFor(game(flat(), [v]), v).filter((a) => a.kind === 'exit');
+  assert.ok(exits.some((a) => a.to[0] === 0 && a.to[1] === 5 && a.cost === 2));
+  assert.ok(exits.some((a) => a.to[0] === 0 && a.to[1] === 3 && a.cost === 4));   // 1 up + 2 left + exit
+  assert.ok(!exits.some((a) => a.to[1] === 2));                                    // would cost 5 > 4
+  const b = P('bv', 'vanguard', 'blue', 10, 5);                // blue exits past row 10, into row 11
+  assert.ok(actionsFor(game(flat(), [b]), b).some((a) => a.kind === 'exit' && a.to[0] === 11 && a.to[1] === 5 && a.cost === 1));
+});
+
+test('pathTo gives the cells a piece walks through, for moves, attacks, specials and exits', () => {
+  const b = flat(); b[4][5] = 2;                                // a hill straight ahead: go round it
+  const v = P('rv', 'vanguard', 'red', 5, 5);
+  const g = game(b, [v, P('bx', 'explorer', 'blue', 3, 5)]);
+  const acts = actionsFor(g, v);
+  const move = acts.find((a) => a.kind === 'move' && a.to[0] === 3 && a.to[1] === 4);
+  const path = pathTo(g, v, move);
+  assert.deepEqual(path[0], [5, 5]);
+  assert.deepEqual(path.at(-1), [3, 4]);
+  for (let i = 1; i < path.length; i++)
+    assert.equal(Math.abs(path[i][0] - path[i - 1][0]) + Math.abs(path[i][1] - path[i - 1][1]), 1, 'orthogonal steps');
+  const attack = acts.find((a) => a.kind === 'attack');
+  assert.deepEqual(pathTo(g, v, attack).at(-1), [3, 5]);
+  const e = P('re', 'explorer', 'red', 8, 8);
+  const ge = game(flat(), [e]);
+  assert.deepEqual(pathTo(ge, e, { kind: 'move', to: [7, 9], special: 'diagonal' }), [[8, 8], [7, 9]]);
+  const x = P('rx', 'vanguard', 'red', 1, 5);
+  const gx = game(flat(), [x]);
+  assert.deepEqual(pathTo(gx, x, actionsFor(gx, x).find((a) => a.kind === 'exit' && a.to[1] === 5)), [[1, 5], [0, 5]]);
 });

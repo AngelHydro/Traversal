@@ -192,5 +192,20 @@ export function generateBoard(modeId, rng = Math.random, tries = 40) {
   return best;
 }
 
-/** Terrain color (0xRRGGBB) for a height in -10..10, from game.py's color_stick. */
-export const colorForHeight = (h) => COLORS[Math.min(6, Math.max(0, Math.floor((h + 10) / 3)))];
+// Soft palette: colour stops by height, interpolated: deep water, water, sand, grass, rock, light rock, snow.
+const SOFT = [[-10, 0x1d3f6e], [-6, 0x3f7fb5], [-3, 0xc8b27a], [0, 0x6fa25a], [3, 0x8a8f72], [6, 0xa8a49b], [10, 0xf4f6f8]];
+const mix = (a, b, t) => [16, 8, 0].reduce((out, s) =>
+  out | (Math.round(((a >> s) & 255) + (((b >> s) & 255) - ((a >> s) & 255)) * t) << s), 0);
+
+/**
+ * Terrain color (0xRRGGBB) for a height in -10..10.
+ * @param {number} h height
+ * @param {'soft'|'classic'} [palette] 'soft': smooth gradient; 'classic': game.py's color_stick
+ */
+export function colorForHeight(h, palette = 'classic') {
+  if (palette !== 'soft') return COLORS[Math.min(6, Math.max(0, Math.floor((h + 10) / 3)))];
+  const x = Math.min(10, Math.max(-10, h));
+  for (let i = 1; i < SOFT.length; i++)
+    if (x <= SOFT[i][0]) return mix(SOFT[i - 1][1], SOFT[i][1], (x - SOFT[i - 1][0]) / (SOFT[i][0] - SOFT[i - 1][0]));
+  return SOFT.at(-1)[1];
+}

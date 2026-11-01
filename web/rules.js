@@ -43,7 +43,8 @@ export function newGame(board) {
 }
 
 // Cheapest orthogonal path cost from the piece to every empty cell (Dijkstra; grid is tiny).
-function pathCosts(state, piece) {
+// `prev` (optional) receives each cell's predecessor on its cheapest path.
+function pathCosts(state, piece, prev = null) {
   const { board, pieces } = state;
   const occupied = new Set(pieces.map((p) => key(p.r, p.c)));
   const cost = new Map([[key(piece.r, piece.c), 0]]);
@@ -56,7 +57,11 @@ function pathCosts(state, piece) {
       const nr = r + dr, nc = c + dc;
       if (!inside(nr, nc) || occupied.has(key(nr, nc))) continue;
       const nd = d + stepCost(board[r][c], board[nr][nc]);
-      if (nd < (cost.get(key(nr, nc)) ?? Infinity)) { cost.set(key(nr, nc), nd); open.push([nd, nr, nc]); }
+      if (nd < (cost.get(key(nr, nc)) ?? Infinity)) {
+        cost.set(key(nr, nc), nd);
+        prev?.set(key(nr, nc), key(r, c));
+        open.push([nd, nr, nc]);
+      }
     }
   }
   return cost; // includes the start cell at 0
@@ -115,10 +120,14 @@ function explorerSpecials(state, piece) {
   return out;
 }
 
-// Exit: reach the goal row with at least 1 movement point left.
-function canExit(piece, cost, budget) {
-  for (const [k, d] of cost) if (Math.floor(k / 16) === GOAL[piece.team] && d <= budget - 1) return true;
-  return false;
+// Exit: reach the goal row with at least 1 movement point left, then step past it (cost 1) onto the
+// cell just beyond the finish line (row 0 for red, row 11 for blue).
+const EDGE = { red: 0, blue: 11 };
+function exitActions(piece, cost, budget) {
+  const out = [];
+  for (const [k, d] of cost)
+    if (Math.floor(k / 16) === GOAL[piece.team] && d <= budget - 1) out.push({ kind: 'exit', to: [EDGE[piece.team], k % 16], cost: d + 1 });
+  return out;
 }
 
 /**
@@ -135,8 +144,38 @@ export function actionsFor(state, piece) {
     ...moveActions(cost, budget),
     ...attackActions(state, piece, cost, budget),
     ...(piece.type === 'explorer' ? explorerSpecials(state, piece) : []),
-    ...(canExit(piece, cost, budget) ? [{ kind: 'exit' }] : []),
+    ...exitActions(piece, cost, budget),
   ];
+}
+
+/**
+ * Cells the piece walks through for `action` (one of `actionsFor`), start included: the cheapest path for
+ * moves, attacks and exits; a straight hop for explorer specials. Used to animate the move.
+ * @returns {number[][]} [[r, c], ...]
+ */
+export function pathTo(state, piece, action) {
+  const start = [piece.r, piece.c];
+  if (action.special) return [start, action.to];
+  const prev = new Map();
+  const cost = pathCosts(state, piece, prev);
+  const [tr, tc] = action.to;
+  // The last cell before the target: the target itself for a move; for an attack the cheapest neighbour of the
+  // enemy; for an exit the goal-row cell in the same column.
+  let last = key(tr, tc);
+  if (action.kind === 'attack') {
+    let best = Infinity;
+    for (const [dr, dc] of ORTHO) {
+      const k = key(tr + dr, tc + dc), d = cost.get(k);
+      if (d !== undefined && d + stepCost(state.board[tr + dr][tc + dc], state.board[tr][tc]) < best) {
+        best = d + stepCost(state.board[tr + dr][tc + dc], state.board[tr][tc]);
+        last = k;
+      }
+    }
+  } else if (action.kind === 'exit') last = key(GOAL[piece.team], tc);
+  const cells = [];
+  for (let k = last; k !== undefined; k = prev.get(k)) cells.unshift([Math.floor(k / 16), k % 16]);
+  if (action.kind !== 'move') cells.push(action.to);
+  return cells;
 }
 
 const canAct = (state, team) => state.pieces.some((p) => p.team === team

@@ -10,7 +10,7 @@ import * as THREE from '../vendor/three.module.js';
 import { generateBoard, makeRng } from '../terrain.js';
 import { newGame, actionsFor, applyAction } from '../rules.js';
 import { square } from '../play.js';
-import { boardSphere, fitCamera, HEIGHT_UNIT, VIEW_DIR } from '../camera.js';
+import { boardBox, fitCamera, HEIGHT_UNIT, VIEW_DIR } from '../camera.js';
 
 let chromium = null;
 try { ({ chromium } = createRequire(import.meta.url)('playwright')); } catch { /* not installed */ }
@@ -37,9 +37,9 @@ async function serve() {
 // at(r, c, dz, dy): dz shifts towards the far edge (negative), dy lifts above the top face.
 // The highlight plate is 0.04 thick on the top face, so a target is aimed at dy = 0.02.
 function projector(board, rect) {
-  const s = boardSphere(board);
+  const s = boardBox(board);
   const aspect = rect.width / rect.height;
-  const { position, target } = fitCamera(s.center, s.radius, 45, aspect, VIEW_DIR);
+  const { position, target } = fitCamera(s.center, s.half, 45, aspect, VIEW_DIR);
   const cam = new THREE.PerspectiveCamera(45, aspect, 0.1, 200);
   cam.position.fromArray(position); cam.lookAt(...target); cam.updateMatrixWorld();
   return (r, c, dz, dy) => {
@@ -134,6 +134,40 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     await page.waitForTimeout(300);
     assert.match(await page.textContent('#error'), /Une erreur est survenue/);
     assert.equal(await page.$eval('#error', (e) => e.hidden), false);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+test('settings: change, apply at once, and survive a reload', { skip: !chromium && 'playwright not installed' }, async () => {
+  const server = await serve();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: W, height: H }, colorScheme: 'light' });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    await page.goto(`http://127.0.0.1:${server.address().port}/?terrain=desert&plateau=3`);
+    await page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'light');
+    await page.click('#open-settings');
+    assert.equal(await page.$eval('#settings', (d) => d.open), true);
+    await page.selectOption('#settings [name=heightMarks]', 'numbers');
+    await page.selectOption('#settings [name=palette]', 'classic');
+    await page.selectOption('#settings [name=theme]', 'dark');
+    await page.uncheck('#settings [name=showCosts]');
+    await page.check('#settings [name=rotateCamera]');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
+    await page.click('#settings .close');
+    assert.equal(await page.$eval('#settings', (d) => d.open), false);
+
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
+    assert.deepEqual(await page.$eval('#settings form', (f) => [f.heightMarks.value, f.palette.value, f.theme.value,
+      f.showCosts.checked, f.rotateCamera.checked, f.animations.checked]), ['numbers', 'classic', 'dark', false, true, true]);
+    assert.deepEqual(errors, []);
   } finally {
     await browser.close();
     server.close();

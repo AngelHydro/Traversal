@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newGameState, handleClick, handleExit, highlights, actionChoices, playChoice, TEAM, square } from '../play.js';
+import { newGameState, handleClick, highlights, actionChoices, playChoice, TEAM, square } from '../play.js';
 
 const flat = () => Array.from({ length: 12 }, () => Array(12).fill(0));
 const P = (id, type, team, r, c) => ({ id, type, team, r, c });
@@ -26,7 +26,7 @@ test('selecting a piece shows its stats and highlights moves', () => {
   const s = handleClick(start(), 10, 4);
   assert.equal(s.selected, 'red-1');
   assert.match(s.message, /Avant-garde.*Mouvement 4, Force 2/);
-  assert.ok(highlights(s).moves.some(([r, c]) => r === 6 && c === 4));
+  assert.ok(highlights(s).moves.some(({ to: [r, c], cost }) => r === 6 && c === 4 && cost === 4));
 });
 test('a move plays, passes the turn and reports it', () => {
   const s = handleClick(handleClick(start(), 10, 4), 7, 4);
@@ -52,17 +52,18 @@ test('an allowed attack captures and reports the strengths', () => {
   const s = handleClick(sel, 5, 6);
   assert.match(s.message, /Sentinelle rouge capture Explorateur bleu \(3 contre 1\)/);
 });
-test('exit is offered on the last row and scores the strength', () => {
+test('exit: the cells past the finish line are highlighted; clicking one exits and scores', () => {
   const pcs = [P('rv', 'vanguard', 'red', 1, 5), P('bx', 'explorer', 'blue', 5, 1)];
   const sel = handleClick(start(pcs), 1, 5);
-  assert.equal(highlights(sel).canExit, true);
-  const s = handleExit(sel);
+  assert.ok(highlights(sel).exits.some(({ to: [r, c], cost }) => r === 0 && c === 5 && cost === 1));
+  assert.match(sel.message, /au-delà de l'arrivée/);
+  const s = handleClick(sel, 0, 5);
   assert.equal(s.scores.red, 2);
   assert.match(s.message, /Avant-garde rouge franchit l'arrivée : \+2/);
 });
 test('a sentinel arriving first wins at once, then clicks do nothing', () => {
   const pcs = [P('rs', 'sentinel', 'red', 1, 5), P('bx', 'explorer', 'blue', 5, 1)];
-  const s = handleExit(handleClick(start(pcs), 1, 5));
+  const s = handleClick(handleClick(start(pcs), 1, 5), 0, 5);
   assert.equal(s.winner, 'red');
   assert.match(s.message, /Sentinelle rouge arrive la première : victoire du joueur 1 \(rouge\)/);
   assert.equal(handleClick(s, 5, 1), s);
@@ -77,7 +78,7 @@ test('a blocked piece explains itself', () => {
 });
 test('each reachable cell is highlighted once, even when an explorer has two ways to reach it', () => {
   const s = handleClick(start([P('re', 'explorer', 'red', 5, 5), P('bx', 'explorer', 'blue', 1, 1)]), 5, 5);
-  const keys = highlights(s).moves.map(([r, c]) => `${r},${c}`);
+  const keys = highlights(s).moves.map(({ to: [r, c] }) => `${r},${c}`);
   assert.equal(new Set(keys).size, keys.length);
   assert.ok(keys.includes('4,4'));
 });
@@ -93,6 +94,7 @@ test('keyboard play: every legal action of the side to move, described in words'
   const pcs = [P('rv', 'vanguard', 'red', 2, 5), P('rs', 'sentinel', 'red', 5, 5), P('be', 'explorer', 'blue', 5, 6), P('bx', 'explorer', 'blue', 9, 9)];
   const choices = actionChoices(start(pcs));
   const labels = choices.map((c) => c.label);
+  assert.equal(labels.filter((l) => /franchir/.test(l)).length, 1, 'one exit entry per piece');
   assert.ok(labels.includes('Avant-garde rouge e9 (hauteur 0) : franchir l\'arrivée (+2)'));
   assert.ok(labels.includes('Sentinelle rouge e6 (hauteur 0) : attaquer Explorateur bleu en f6 (3 contre 1)'));
   assert.ok(labels.some((l) => /^Sentinelle rouge e6 \(hauteur 0\) : aller en e7 \(coût 1\)$/.test(l)));
@@ -100,4 +102,13 @@ test('keyboard play: every legal action of the side to move, described in words'
   const s = playChoice(start(pcs), choices.find((c) => /franchir/.test(c.label)));
   assert.equal(s.scores.red, 2);
   assert.match(s.message, /franchit l'arrivée/);
+});
+test('each played move records what happened, for the animations', () => {
+  const pcs = [P('rs', 'sentinel', 'red', 5, 5), P('be', 'explorer', 'blue', 5, 7), P('bx', 'explorer', 'blue', 1, 1)];
+  const s = handleClick(handleClick(start(pcs), 5, 5), 5, 7);
+  assert.equal(s.last.pieceId, 'rs');
+  assert.equal(s.last.action.kind, 'attack');
+  assert.equal(s.last.targetId, 'be');
+  assert.deepEqual(s.last.path, [[5, 5], [5, 6], [5, 7]]);
+  assert.equal(start().last, null);
 });
