@@ -71,6 +71,17 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
         await page.waitForTimeout(100);
       }
     };
+    // Every refused action explains itself: help is visible, a wrong-side click says whose turn it is,
+    // a new game is confirmed.
+    assert.match(await page.textContent('#help'), /pièce.*case jaune/);
+    {
+      const [x, y] = projector(boardBounds().min, await canvas.boundingBox())(10, 1, 0, 0.2);
+      await page.mouse.click(x, y);
+      assert.match(await page.textContent('#last'), /Au tour des noirs.*pièce noire/);
+    }
+    await page.click('#new');
+    assert.match(await page.textContent('#last'), /Nouvelle partie.*Fosse des Mariannes.*noirs commencent/);
+
     // Column a is the trench's flat rim (height -2 everywhere), so no piece hides behind a column.
     // Black and red walk towards each other along it, then black captures.
     for (const [b, r] of [[1, 10], [2, 9], [3, 8], [4, 7]]) { await move([b, 1], [b + 1, 1]); await move([r, 1], [r - 1, 1]); }
