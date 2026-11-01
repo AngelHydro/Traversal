@@ -100,7 +100,7 @@ test('colorForHeight covers -10..10', () => {
 
 - [ ] **Step 2: Vérifier que les tests échouent**
 
-Run: `node --test web/test/`
+Run: `node --test web/test/*.test.js`
 Expected: FAIL, `Cannot find module .../web/terrain.js`
 
 - [ ] **Step 3: Implémenter `web/terrain.js`**
@@ -114,7 +114,7 @@ Porter `gen_board` et `gen_mix_board` ligne à ligne. Points à respecter :
 
 - [ ] **Step 4: Vérifier que les tests passent**
 
-Run: `node --test web/test/`
+Run: `node --test web/test/*.test.js`
 Expected: PASS, 4 tests
 
 - [ ] **Step 5: Commit**
@@ -213,14 +213,14 @@ test('movePiece does not mutate', () => {
 
 - [ ] **Step 2: Vérifier que les tests échouent**
 
-Run: `node --test web/test/`
+Run: `node --test web/test/*.test.js`
 Expected: FAIL, `Cannot find module .../web/rules.js`
 
 - [ ] **Step 3: Implémenter `web/rules.js`** avec les signatures ci-dessus.
 
 - [ ] **Step 4: Vérifier que les tests passent**
 
-Run: `node --test web/test/`
+Run: `node --test web/test/*.test.js`
 Expected: PASS, 14 tests
 
 - [ ] **Step 5: Commit**
@@ -299,14 +299,14 @@ test('index.html uses only relative local paths', () => {
 
 - [ ] **Step 2: Vérifier qu'il échoue**
 
-Run: `node --test web/test/`
+Run: `node --test web/test/*.test.js`
 Expected: FAIL, `ENOENT ... index.html`
 
 - [ ] **Step 3: Implémenter `index.html` et `web/main.js`**, ajouter `.nojekyll` et le lien dans `README.md` : `https://angelhydro.github.io/Traversal/`
 
 - [ ] **Step 4: Vérifier**
 
-Run: `node --test web/test/`
+Run: `node --test web/test/*.test.js`
 Expected: PASS, 15 tests
 
 Run: `python3 -m http.server 8000`, ouvrir la page, choisir « Forêts moyennes » et jouer jusqu'à une capture, puis jusqu'à ce qu'une pièce atteigne le camp adverse.

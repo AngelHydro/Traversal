@@ -2,10 +2,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { colorForHeight } from './terrain.js';
+import { pickCell, createClickTracker } from './pick.js';
 
 const HEIGHT_UNIT = 0.5;
 const FLOOR = -11 * HEIGHT_UNIT;
 const PIECE_H = 0.25;
+const LIFT = 0.15; // selected piece is raised by this much
 const TEAM_COLOR = { black: 0x111111, red: 0xcc0000 };
 const CLICK_SLOP = 5; // px: a drag longer than this rotates the camera, it does not click
 
@@ -22,23 +24,32 @@ const BARS = {
 // Guard = pentagonal shield (game.py 452), points as [dr, dc].
 const SHIELD = [[-0.375, -0.25], [-0.375, 0.25], [0.125, 0.25], [0.375, 0], [0.125, -0.25]];
 
+// Materials are few and shared for the page's lifetime; only geometries are disposed.
+const materials = new Map();
+const mat = (key, make) => materials.get(key) || materials.set(key, make()).get(key);
+const solid = (color) => mat(color, () => new THREE.MeshStandardMaterial({ color }));
+const EDGE = () => mat('edge', () => new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
+const TARGET = () => mat('target', () => new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.6 }));
+
 function pieceMesh(piece) {
-  const mat = new THREE.MeshStandardMaterial({ color: TEAM_COLOR[piece.team] });
+  const m = solid(TEAM_COLOR[piece.team]);
   const g = new THREE.Group();
   if (piece.type === 'guard') {
     const shape = new THREE.Shape(SHIELD.map(([dr, dc]) => new THREE.Vector2(dc, -dr)));
     const geo = new THREE.ExtrudeGeometry(shape, { depth: PIECE_H, bevelEnabled: false });
     geo.rotateX(-Math.PI / 2); // extrusion now goes up, shape y (= -dr) maps to z = dr
-    g.add(new THREE.Mesh(geo, mat));
+    g.add(new THREE.Mesh(geo, m));
   } else {
     for (const [dr, dc, lr, lc] of BARS[piece.type]) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(lc, PIECE_H, lr), mat);
-      m.position.set(dc, PIECE_H / 2, dr);
-      g.add(m);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(lc, PIECE_H, lr), m);
+      bar.position.set(dc, PIECE_H / 2, dr);
+      g.add(bar);
     }
   }
   return g;
 }
+
+const disposeGeometries = (o) => o.traverse((x) => x.geometry?.dispose());
 
 export function createScene(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -65,68 +76,65 @@ export function createScene(container) {
 
   let board = null;
   let clickCb = () => {};
+  const pieceMeshes = new Map(); // piece id -> Group, reused across moves
 
   const clear = (group) => {
-    for (const o of [...group.children]) {
-      group.remove(o);
-      o.traverse((x) => { x.geometry?.dispose(); x.material?.dispose(); });
-    }
+    for (const o of [...group.children]) { group.remove(o); disposeGeometries(o); }
   };
 
   function setBoard(b) {
     board = b;
     clear(boardGroup);
+    clear(pieceGroup);
+    pieceMeshes.clear();
     for (let r = 1; r <= 10; r++)
       for (let c = 1; c <= 10; c++) {
         const h = top(b[r][c]) - FLOOR;
         const geo = new THREE.BoxGeometry(0.98, h, 0.98);
-        const col = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: colorForHeight(b[r][c]) }));
+        const col = new THREE.Mesh(geo, solid(colorForHeight(b[r][c])));
         col.position.set(cx(c), FLOOR + h / 2, cz(r));
-        col.userData = { r, c };
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
-          new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
-        col.add(edges);
+        col.userData = { kind: 'cell', r, c };
+        col.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), EDGE()));
         boardGroup.add(col);
       }
   }
 
   function setPieces(pieces, selectedId) {
-    clear(pieceGroup);
+    const alive = new Set(pieces.map((p) => p.id));
+    for (const [id, g] of pieceMeshes)
+      if (!alive.has(id)) { pieceGroup.remove(g); disposeGeometries(g); pieceMeshes.delete(id); }
     for (const p of pieces) {
-      const m = pieceMesh(p);
-      m.position.set(cx(p.c), top(board[p.r][p.c]) + (p.id === selectedId ? 0.15 : 0), cz(p.r));
-      m.traverse((x) => { x.userData = { r: p.r, c: p.c }; });
-      pieceGroup.add(m);
+      let g = pieceMeshes.get(p.id);
+      if (!g) { g = pieceMesh(p); pieceMeshes.set(p.id, g); pieceGroup.add(g); }
+      g.position.set(cx(p.c), top(board[p.r][p.c]) + (p.id === selectedId ? LIFT : 0), cz(p.r));
+      g.traverse((x) => { x.userData = { kind: 'piece', r: p.r, c: p.c }; });
     }
   }
 
   function setHighlights(cells) {
     clear(highlightGroup);
     for (const [r, c] of cells) {
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.9),
-        new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.6 }));
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.9), TARGET());
       plate.position.set(cx(c), top(board[r][c]) + 0.02, cz(r));
-      plate.userData = { r, c };
+      plate.userData = { kind: 'target', r, c };
       highlightGroup.add(plate);
     }
   }
 
-  // Click picking, ignored when the pointer moved (camera drag).
+  // Click picking: single-pointer taps only (drags rotate, pinches zoom).
   const ray = new THREE.Raycaster();
-  let down = null;
-  renderer.domElement.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; });
-  renderer.domElement.addEventListener('pointerup', (e) => {
-    if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > CLICK_SLOP) return;
-    down = null;
-    const rect = renderer.domElement.getBoundingClientRect();
+  const tracker = createClickTracker(CLICK_SLOP);
+  const el = renderer.domElement;
+  el.addEventListener('pointerdown', (e) => tracker.down(e));
+  el.addEventListener('pointercancel', (e) => tracker.cancel(e));
+  el.addEventListener('pointerup', (e) => {
+    if (!tracker.up(e)) return;
+    const rect = el.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    // A highlighted target wins even when a nearer column hides it (moving down towards the camera).
-    const hits = ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true);
-    const hit = hits.find((h) => highlightGroup.children.includes(h.object))
-      || hits.find((h) => h.object.userData.r !== undefined);
-    if (hit) clickCb(hit.object.userData.r, hit.object.userData.c);
+    const cell = pickCell(ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true));
+    if (cell) clickCb(cell[0], cell[1]);
   });
 
   new ResizeObserver(() => {

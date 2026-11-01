@@ -44,9 +44,11 @@ export function winner(board, pieces, toMove) {
   return canMove ? null : other(toMove);
 }
 
-// Draws boards until black (who moves first) has a legal move, so no game is over before it starts.
+// Draws boards until both sides have a legal move from the start, so no side is walled in from move one.
 export function dealBoard(generate, tries = 50) {
+  const pieces = initialPieces();
+  const stuck = (b) => winner(b, pieces, 'black') || winner(b, pieces, 'red');
   let board = generate();
-  for (let k = 1; k < tries && winner(board, initialPieces(), 'black'); k++) board = generate();
+  for (let k = 1; k < tries && stuck(board); k++) board = generate();
   return board;
 }

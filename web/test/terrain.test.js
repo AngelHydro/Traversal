@@ -11,7 +11,7 @@ test('every landscape generates a valid board', () => {
     assert.equal(b.length, SIZE);
     assert.ok(isValidBoard(b), `landscape ${id}`);
     assert.ok(Date.now() - t < 1000, `landscape ${id} too slow`);
-    for (let i = 0; i < SIZE; i++) assert.equal(b[0][i] + b[11][i] + b[i][0] + b[i][11], 0);
+    for (let i = 0; i < SIZE; i++) for (const v of [b[0][i], b[11][i], b[i][0], b[i][11]]) assert.equal(v, 0);
   }
 });
 test('Everest is the max board, Mariana the min', () => {
@@ -27,4 +27,8 @@ test('colorForHeight covers -10..10', () => {
   assert.equal(colorForHeight(-10), 0x000080);
   assert.equal(colorForHeight(0), 0x008000);
   assert.equal(colorForHeight(10), 0x87ceeb);
+});
+test('generation terminates even when every push fails', () => {
+  const b = generateBoard(1, () => 0.999);   // always up, always the same cell
+  assert.ok(isValidBoard(b));
 });

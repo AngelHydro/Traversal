@@ -8,3 +8,7 @@ test('index.html uses only relative local paths', () => {
   assert.match(html, /src="\.\/web\/main\.js"/);
   assert.doesNotMatch(html, /(src|href)="\/(?!\/)/);
 });
+test('error banner is only for load failures', () => {
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(html, /window\.onerror/);
+});

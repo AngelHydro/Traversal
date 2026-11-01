@@ -63,3 +63,10 @@ test('dealBoard regenerates a board where the side to move is walled in', async 
   assert.equal(calls, 2);
   assert.equal(b, boards[1]);
 });
+test('dealBoard also rejects a board where red is walled in', async () => {
+  const { dealBoard } = await import('../rules.js');
+  const walled = flat(); for (let c = 1; c <= 10; c++) walled[9][c] = 2;
+  const boards = [walled, flat()];
+  let calls = 0;
+  assert.equal(dealBoard(() => boards[calls++]), boards[1]);
+});

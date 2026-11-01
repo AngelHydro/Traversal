@@ -51,13 +51,15 @@ export function isValidBoard(board) {
 
 // gen_board: random +1/-1 pushes in [lo, hi), undone when they break the physics.
 function genBoard(b, rng, push, lo, hi, factor) {
-  let moves = 0;
+  let moves = 0, strikes = 0;
   while (moves < push) {
     const up = rng() >= factor;
     const i = randInt(rng, lo, hi), j = randInt(rng, lo, hi);
     b[i][j] += up ? 1 : -1;
-    if (violates(b, i, j)) b[i][j] -= up ? 1 : -1;
-    else moves++;
+    if (violates(b, i, j)) {
+      b[i][j] -= up ? 1 : -1;
+      if (++strikes >= 1e5) break; // same cap as gen_mix_board: never hang on a saturated region
+    } else { moves++; strikes = 0; }
   }
 }
 

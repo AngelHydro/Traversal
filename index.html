@@ -36,9 +36,6 @@
 </div>
 <noscript><div>Ce jeu nécessite JavaScript.</div></noscript>
 <div id="error" hidden>Impossible de charger le jeu (connexion au CDN ?)</div>
-<script>
-  window.onerror = () => { document.getElementById('error').hidden = false; };
-</script>
 <script type="module" src="./web/main.js" onerror="document.getElementById('error').hidden = false"></script>
 </body>
 </html>
