@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traversal</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --panel: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #d8d4ca;
+    --accent: #2f6f4f; --accent-text: #ffffff; --danger: #b3261e;
+    --p0: #151515; --p1: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #17181a; --panel: #222327; --text: #ececec; --muted: #a0a0a6; --line: #3a3b40; --accent: #5fb38a; --accent-text: #0e1a14; --danger: #ef8a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { margin: 8px 0 4px; font-size: 1.8rem; letter-spacing: .02em; }
+  .sub { margin: 0 0 16px; color: var(--muted); }
+  fieldset { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); margin: 0 0 14px; padding: 12px 14px 14px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  select, input[type=number], input[type=text] { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+  select { width: 100%; }
+  .tc-group { margin: 8px 0 0; }
+  .tc-group h3 { margin: 0 0 6px; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip input { position: absolute; opacity: 0; pointer-events: none; }
+  .chip span { display: inline-block; min-width: 64px; text-align: center; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .chip input:checked + span { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  .chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .custom { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 8px; }
+  .custom label { display: flex; gap: 6px; align-items: center; }
+  .custom input { width: 84px; }
+  .err { color: var(--danger); min-height: 1.2em; margin: 6px 0 0; font-size: .9rem; }
+  button.primary, button.secondary { font: inherit; border-radius: 8px; padding: 10px 16px; cursor: pointer; border: 1px solid var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); font-weight: 600; width: 100%; }
+  button.secondary { background: transparent; color: var(--text); border-color: var(--line); }
+  details { margin-top: 16px; color: var(--muted); }
+  details li { margin-bottom: 4px; }
+
+  /* Partie */
+  .bar { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 8px 0; }
+  .player { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #0004; }
+  .clock { font: 600 1.5rem/1 ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; padding: 8px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); min-width: 7ch; text-align: right; }
+  .clock.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .clock.low.on { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .clock.none { visibility: hidden; }
+  .board { display: grid; grid-template-columns: repeat(10, 1fr); width: 100%; aspect-ratio: 1; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .cell { position: relative; border: 0; margin: 0; padding: 0; font: inherit; cursor: pointer; box-shadow: inset 0 0 0 .5px #0003; }
+  .cell .h { position: absolute; top: 2px; left: 4px; font-size: clamp(9px, 2.2vw, 12px); opacity: .75; font-variant-numeric: tabular-nums; }
+  .cell.last { box-shadow: inset 0 0 0 3px #f5c542; }
+  .cell.target::after { content: ""; position: absolute; inset: 35%; border-radius: 50%; background: #f5c542; opacity: .9; }
+  .cell.target.cap::after { inset: 8%; background: transparent; border: 4px solid #f5c542; }
+  .cell:focus-visible { outline: 3px solid #f5c542; outline-offset: -3px; z-index: 1; }
+  .piece { position: absolute; inset: 16%; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: clamp(11px, 3vw, 18px); border: 2px solid #fff; box-shadow: 0 2px 4px #0006; }
+  .piece.p0 { background: var(--p0); }
+  .piece.p1 { background: var(--p1); }
+  .cell.sel .piece { box-shadow: 0 0 0 3px #f5c542, 0 2px 4px #0006; }
+  .status { min-height: 1.5em; margin: 10px 0; font-weight: 600; text-align: center; }
+  .actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .meta { color: var(--muted); font-size: .85rem; text-align: center; margin-top: 10px; }
+  .history { color: var(--muted); font: .85rem/1.5 ui-monospace, Menlo, monospace; margin-top: 8px; word-spacing: .3em; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <section id="setup">
+    <h1>Traversal</h1>
+    <p class="sub">Un plateau en relief, différent à chaque partie. Deux joueurs sur le même écran.</p>
+
+    <fieldset>
+      <legend>Terrain</legend>
+      <select id="terrain" aria-label="Terrain"></select>
+    </fieldset>
+
+    <fieldset id="tc">
+      <legend>Cadence</legend>
+      <div id="tc-list"></div>
+      <div class="tc-group">
+        <h3>Personnalisée</h3>
+        <div class="custom">
+          <label class="chip"><input type="radio" name="tc" value="custom"><span>Choisir</span></label>
+          <label>Minutes <input id="cm" type="number" min="0.5" max="180" step="0.5" value="7"></label>
+          <label>Incrément (s) <input id="ci" type="number" min="0" max="180" step="1" value="3"></label>
+        </div>
+      </div>
+      <p class="err" id="tc-err" role="alert"></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Code du plateau (facultatif)</legend>
+      <input id="seed" type="text" inputmode="numeric" placeholder="Aléatoire" aria-label="Code du plateau" style="width:100%">
+    </fieldset>
+
+    <button class="primary" id="play">Jouer</button>
+
+    <details>
+      <summary>Règles</summary>
+      <ul>
+        <li>Chaque camp a 6 pièces (S soldat, G garde, M médecin), qui se déplacent toutes de la même façon. Les Noirs commencent.</li>
+        <li>Une pièce avance d'une case orthogonale : à hauteur égale, en montant d'un niveau au plus, ou en descendant de deux niveaux au plus.</li>
+        <li>On capture en arrivant sur la case d'une pièce adverse.</li>
+        <li>On gagne en capturant toutes les pièces adverses, si l'adversaire ne peut plus jouer, ou si sa pendule tombe à zéro.</li>
+        <li>Le chiffre de chaque case est sa hauteur. Cadence « 3 | 2 » : 3 minutes par joueur, plus 2 secondes après chaque coup.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section id="game" hidden>
+    <div class="bar">
+      <div class="player"><span class="dot" style="background:var(--p1)"></span>Rouges <span id="cap1"></span></div>
+      <div class="clock" id="clock1" aria-label="Temps des Rouges"></div>
+    </div>
+    <div class="board" id="board" role="grid" aria-label="Plateau"></div>
+    <div class="bar">
+      <div class="player"><span class="dot" style="background:var(--p0)"></span>Noirs <span id="cap0"></span></div>
+      <div class="clock" id="clock0" aria-label="Temps des Noirs"></div>
+    </div>
+    <p class="status" id="status" aria-live="polite"></p>
+    <div class="actions">
+      <button class="secondary" id="resign">Abandonner</button>
+      <button class="secondary" id="rematch">Revanche (même plateau)</button>
+      <button class="secondary" id="new">Nouvelle partie</button>
+    </div>
+    <p class="meta" id="meta"></p>
+    <p class="history" id="history"></p>
+  </section>
+</main>
+
+<script src="game.js"></script>
+<script src="clock.js"></script>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const NAMES = ['Noirs', 'Rouges'];
+const LETTER = { soldier: 'S', guard: 'G', medic: 'M' };
+const TYPE = { soldier: 'soldat', guard: 'garde', medic: 'médecin' };
+
+// --- Écran de configuration ---
+const groups = {};
+for (const t of Traversal.TERRAINS) (groups[t.group] ||= []).push(t);
+for (const [g, list] of Object.entries(groups)) {
+  const og = document.createElement('optgroup');
+  og.label = g;
+  for (const t of list) og.append(new Option(t.name, t.id, false, t.id === 'woodland-mid'));
+  $('terrain').append(og);
+}
+
+const tcGroups = {};
+Clock.PRESETS.forEach((p, i) => (tcGroups[p.group] ||= []).push([p, i]));
+for (const [g, list] of Object.entries(tcGroups)) {
+  const div = document.createElement('div');
+  div.className = 'tc-group';
+  div.innerHTML = '<h3>' + g + '</h3><div class="chips"></div>';
+  for (const [p, i] of list) {
+    const l = document.createElement('label');
+    l.className = 'chip';
+    l.innerHTML = '<input type="radio" name="tc" value="' + i + '"><span>' + (p.minutes === null ? '∞' : Clock.label(p)) + '</span>';
+    div.lastChild.append(l);
+  }
+  $('tc-list').append(div);
+}
+const saved = (() => { try { return localStorage.getItem('traversal-tc'); } catch { return null; } })();
+(document.querySelector('input[name=tc][value="' + (saved ?? '8') + '"]') || document.querySelector('input[name=tc][value="8"]')).checked = true;
+['cm', 'ci'].forEach((id) => $(id).addEventListener('focus', () => (document.querySelector('input[name=tc][value=custom]').checked = true)));
+
+function readControl() {
+  const v = document.querySelector('input[name=tc]:checked').value;
+  try { localStorage.setItem('traversal-tc', v); } catch {}
+  if (v !== 'custom') return Clock.PRESETS[+v];
+  return Clock.customControl($('cm').value, $('ci').value);
+}
+
+// --- Partie ---
+let state, control, clock, selected = null, last = null, timer = null;
+
+function heightColor(h) {
+  const stops = [[-10, [16, 42, 99]], [-5, [47, 127, 216]], [-3, [139, 90, 43]], [0, [63, 143, 63]], [3, [138, 138, 138]], [6, [232, 232, 232]], [10, [191, 227, 245]]];
+  let k = 0;
+  while (k < stops.length - 2 && h > stops[k + 1][0]) k++;
+  const [h0, a] = stops[k], [h1, b] = stops[k + 1];
+  const t = Math.min(1, Math.max(0, (h - h0) / (h1 - h0)));
+  const rgb = a.map((x, i) => Math.round(x + (b[i] - x) * t));
+  const lum = (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255;
+  return { bg: 'rgb(' + rgb + ')', fg: lum > 0.55 ? '#1d1d1f' : '#ffffff' };
+}
+
+function start(terrainId, seed) {
+  state = Traversal.newGame(terrainId, seed);
+  selected = null; last = null;
+  clearInterval(timer);
+  clock = control.minutes === null ? null : Clock.createClock(control.minutes * 60000, control.increment * 1000);
+  if (clock) { clock.start(0); timer = setInterval(tick, 100); }
+  const t = Traversal.TERRAINS.find((x) => x.id === terrainId);
+  $('meta').textContent = t.name + ' · cadence ' + Clock.label(control) + ' · code du plateau ' + state.seed;
+  $('setup').hidden = true; $('game').hidden = false;
+  render();
+  $('board').querySelector('.cell').focus();
+}
+
+function finish(winner, reason) {
+  state = Traversal.endGame(state, winner, reason);
+  if (clock) clock.stop();
+  clearInterval(timer);
+  render();
+}
+
+function tick() {
+  if (clock && state.winner === null && clock.flagged() !== null) finish(1 - clock.flagged(), 'time');
+  renderClocks();
+}
+
+function renderClocks() {
+  for (const p of [0, 1]) {
+    const el = $('clock' + p);
+    el.classList.toggle('none', !clock);
+    if (!clock) continue;
+    const ms = clock.remaining(p);
+    el.textContent = Clock.formatTime(ms);
+    el.classList.toggle('on', clock.active() === p);
+    el.classList.toggle('low', ms < 20000);
+  }
+}
+
+function render() {
+  const board = $('board');
+  const targets = selected ? Traversal.legalMoves(state, selected) : [];
+  board.textContent = '';
+  for (let r = 0; r < Traversal.N; r++) {
+    for (let c = 0; c < Traversal.N; c++) {
+      const h = state.heights[r][c];
+      const col = heightColor(h);
+      const p = Traversal.pieceAt(state, r, c);
+      const tg = targets.find((m) => m.r === r && m.c === c);
+      const b = document.createElement('button');
+      b.className = 'cell' + (tg ? ' target' + (tg.capture ? ' cap' : '') : '') + (p && p.id === selected ? ' sel' : '') +
+        (last && ((last[0] === r && last[1] === c) || (last[2] === r && last[3] === c)) ? ' last' : '');
+      b.style.background = col.bg;
+      b.style.color = col.fg;
+      b.dataset.r = r; b.dataset.c = c;
+      b.setAttribute('aria-label', Traversal.square(r, c) + ', hauteur ' + h + (p ? ', ' + TYPE[p.type] + ' ' + NAMES[p.owner].toLowerCase().slice(0, -1) : '') + (tg ? ', déplacement possible' : ''));
+      b.innerHTML = '<span class="h">' + h + '</span>' + (p ? '<span class="piece p' + p.owner + '">' + LETTER[p.type] + '</span>' : '');
+      board.append(b);
+    }
+  }
+  for (const o of [0, 1]) $('cap' + o).textContent = '· ' + state.pieces.filter((p) => p.owner === o).length + ' pièces';
+  const why = { capture: 'toutes les pièces adverses sont capturées', blocked: "l'adversaire ne peut plus jouer", time: 'temps écoulé', resign: 'abandon' };
+  $('status').textContent = state.winner === null
+    ? 'Au tour des ' + NAMES[state.turn]
+    : NAMES[state.winner] + ' gagnent : ' + why[state.reason];
+  $('resign').hidden = state.winner !== null;
+  $('history').textContent = state.history.map((m, i) => (i % 2 ? '' : i / 2 + 1 + '.') + m).join(' ');
+  renderClocks();
+}
+
+$('board').addEventListener('click', (e) => {
+  const cell = e.target.closest('.cell');
+  if (!cell || state.winner !== null) return;
+  const r = +cell.dataset.r, c = +cell.dataset.c;
+  const p = Traversal.pieceAt(state, r, c);
+  if (selected && Traversal.legalMoves(state, selected).some((m) => m.r === r && m.c === c)) {
+    const from = state.pieces.find((x) => x.id === selected);
+    last = [from.r, from.c, r, c];
+    state = Traversal.applyMove(state, selected, r, c);
+    selected = null;
+    if (state.winner !== null) finish(state.winner, state.reason);
+    else { if (clock) clock.press(); render(); }
+  } else {
+    selected = p && p.owner === state.turn && p.id !== selected ? p.id : null;
+    render();
+  }
+  $('board').querySelector('[data-r="' + r + '"][data-c="' + c + '"]').focus();
+});
+
+// Flèches du clavier pour naviguer dans le plateau.
+$('board').addEventListener('keydown', (e) => {
+  const d = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] }[e.key];
+  const cell = e.target.closest('.cell');
+  if (!d || !cell) return;
+  e.preventDefault();
+  const r = Math.min(9, Math.max(0, +cell.dataset.r + d[0])), c = Math.min(9, Math.max(0, +cell.dataset.c + d[1]));
+  $('board').querySelector('[data-r="' + r + '"][data-c="' + c + '"]').focus();
+});
+
+$('play').addEventListener('click', () => {
+  control = readControl();
+  if (!control) { $('tc-err').textContent = 'Cadence personnalisée : 0,5 à 180 minutes, incrément entier de 0 à 180 secondes.'; return; }
+  $('tc-err').textContent = '';
+  const raw = $('seed').value.trim();
+  const seed = /^\d{1,9}$/.test(raw) ? +raw : Math.floor(Math.random() * 1e9);
+  start($('terrain').value, seed);
+});
+$('resign').addEventListener('click', () => { if (state.winner === null && confirm('Les ' + NAMES[state.turn] + ' abandonnent ?')) finish(1 - state.turn, 'resign'); });
+$('rematch').addEventListener('click', () => start(state.terrainId, state.seed));
+$('new').addEventListener('click', () => { clearInterval(timer); if (clock) clock.stop(); $('game').hidden = true; $('setup').hidden = false; });
+</script>
+</body>
+</html>
