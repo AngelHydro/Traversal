@@ -133,7 +133,7 @@ Règle de game.py:668-671, la même pour toutes les pièces : un pas orthogonal 
 **Règles décidées par le propriétaire du repo (2026-11-01), en complément de game.py :**
 - **Capture :** une pièce capture une pièce adverse en allant sur sa case, avec la même règle de déplacement. La pièce capturée est retirée du plateau. Une pièce ne peut pas aller sur une case occupée par son propre camp.
 - **Victoire :** un joueur gagne dès qu'une de ses pièces atteint la dernière rangée adverse : `r = 10` pour les noirs, `r = 1` pour les rouges.
-- **Départ :** placement fixe et identique pour les deux camps. Chaque camp a 10 pièces sur sa première rangée, dans l'ordre de colonne 1 à 10 `S S G S M M S G S S` (S = soldat, G = garde, M = médecin). La composition reste à confirmer, car game.py ne la donne pas. Les noirs sont en `r = 1` et jouent en premier (« Player 1 », `team == True` = noir dans game.py) ; les rouges sont en `r = 10`.
+- **Départ :** placement fixe et identique pour les deux camps. Chaque camp a 10 pièces sur sa première rangée, dans l'ordre de colonne 1 à 10 `S S G S M M S G S S` (S = soldat, G = garde, M = médecin). Les trois types et le nombre de 10 pièces par camp sont confirmés par le propriétaire ; l'ordre sur la rangée est un choix par défaut. Les noirs sont en `r = 1` et jouent en premier (« Player 1 », `team == True` = noir dans game.py) ; les rouges sont en `r = 10`.
 - **Blocage :** un joueur qui n'a aucun coup légal à son tour perd, ce qui inclut le cas où il n'a plus de pièce. Sans cette règle, la partie ne se termine jamais quand un camp est bloqué par le relief.
 
 **Files:**
