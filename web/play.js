@@ -4,10 +4,10 @@ import { initialPieces, legalMoves, movePiece, winner, other } from './rules.js'
 
 /** Display names of the two sides. */
 export const TEAM = { black: 'noirs', red: 'rouges' };
-const ONE = { black: 'pièce noire', red: 'pièce rouge' };
+const PIECE_OF = { black: 'pièce noire', red: 'pièce rouge' };
 const PIECE = { soldier: 'soldat', guard: 'garde', medic: 'médecin' };
 const square = (r, c) => 'abcdefghij'[c - 1] + r; // column letter + row number
-const yourTurn = (team) => `Au tour des ${TEAM[team]} : sélectionnez une ${ONE[team]}.`;
+const yourTurn = (team) => `Au tour des ${TEAM[team]} : sélectionnez une ${PIECE_OF[team]}.`;
 
 /**
  * Fresh game state on a dealt board.
@@ -20,7 +20,7 @@ export function newGameState(board, landscapeName) {
     board, pieces, turn: 'black', selected: null, winner: won,
     captured: { black: 0, red: 0 },
     message: `Nouvelle partie : ${landscapeName}. ` + (won
-      ? `Les noirs ne peuvent pas bouger. Victoire des ${TEAM[won]} ! Relancez une partie.`
+      ? `Noirs bloqués : victoire des ${TEAM[won]}. Relancez une partie.`
       : 'Les noirs commencent : sélectionnez une pièce noire.'),
   };
 }

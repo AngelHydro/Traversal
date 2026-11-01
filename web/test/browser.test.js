@@ -100,6 +100,36 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     assert.match(await page.textContent('#error'), /interrompu/);
     await lose.evaluate((x) => x.restoreContext());
     await page.waitForSelector('#error[hidden]', { state: 'attached' });
+
+    // An error inside a handler is shown, and a later WebGL restore does not hide it.
+    await page.evaluate(() => {
+      const sel = document.getElementById('landscape');
+      sel.append(new Option('inconnu', '999'));
+      sel.value = '999';
+      sel.dispatchEvent(new Event('change'));
+    });
+    await page.waitForSelector('#error:not([hidden])');
+    assert.match(await page.textContent('#error'), /Une erreur est survenue.*Terrain inconnu/);
+    await lose.evaluate((x) => x.loseContext());
+    await lose.evaluate((x) => x.restoreContext());
+    await page.waitForTimeout(300);
+    assert.match(await page.textContent('#error'), /Une erreur est survenue/);
+    assert.equal(await page.$eval('#error', (e) => e.hidden), false);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+test('on a phone the panel leaves most of the screen to the board', { skip: !chromium && 'playwright not installed' }, async () => {
+  const server = await serve();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 375, height: 667 } });
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    const panel = await page.locator('#panel').boundingBox();
+    assert.ok(panel.y + panel.height <= 667 * 0.3, `panel bottom at ${panel.y + panel.height}px`);
   } finally {
     await browser.close();
     server.close();

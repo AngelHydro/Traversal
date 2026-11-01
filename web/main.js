@@ -52,9 +52,12 @@ const guarded = (fn) => (...args) => {
 try {
   view = createScene($('view'));
   // The GPU can drop the context (driver reset, too many tabs): say so, and clear it once restored.
-  $('view').addEventListener('webglcontextlost', () =>
-    showError('Le rendu 3D a été interrompu par le navigateur. Rechargez la page si le plateau ne revient pas.'), true);
-  $('view').addEventListener('webglcontextrestored', () => { $('error').hidden = true; }, true);
+  const LOST = 'Le rendu 3D a été interrompu par le navigateur. Rechargez la page si le plateau ne revient pas.';
+  $('view').addEventListener('webglcontextlost', () => { if ($('error').hidden) showError(LOST); }, true);
+  // Only clear our own banner: another error shown meanwhile must stay visible.
+  $('view').addEventListener('webglcontextrestored', () => {
+    if ($('error').textContent === LOST) $('error').hidden = true;
+  }, true);
   view.onCellClick(guarded((r, c) => {
     state = handleClick(state, r, c);
     render();

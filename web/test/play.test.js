@@ -56,9 +56,13 @@ test('a board where black cannot move ends the game at once', () => {
   const b = flat(); for (let c = 1; c <= 10; c++) b[2][c] = 2;
   const s = start(b);
   assert.equal(s.winner, 'red');
-  assert.match(s.message, /noirs ne peuvent pas bouger.*Victoire des rouges/);
+  assert.match(s.message, /Noirs bloqués : victoire des rouges/);
 });
 test('the blocked-piece message is short enough for two lines on a phone', () => {
   const b = flat(); b[2][3] = 2;
   assert.ok(handleClick(start(b), 1, 3).message.length <= 90);
+});
+test('new-game messages fit two lines on a phone, even with the longest landscape name', () => {
+  const stuck = flat(); for (let c = 1; c <= 10; c++) stuck[2][c] = 2;
+  for (const b of [flat(), stuck]) assert.ok(newGameState(b, 'Montagnes et vallées').message.length <= 100);
 });
