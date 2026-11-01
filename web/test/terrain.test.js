@@ -32,3 +32,7 @@ test('generation terminates even when every push fails', () => {
   const b = generateBoard(1, () => 0.999);   // always up, always the same cell
   assert.ok(isValidBoard(b));
 });
+test('DEFAULT_LANDSCAPE is Forêts moyennes', async () => {
+  const { DEFAULT_LANDSCAPE } = await import('../terrain.js');
+  assert.equal(LANDSCAPES.find((l) => l.id === DEFAULT_LANDSCAPE)?.name, 'Forêts moyennes');
+});

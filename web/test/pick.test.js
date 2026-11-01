@@ -30,3 +30,8 @@ test('click tracker: a pinch (two pointers) never clicks', () => {
   t.down({ pointerId: 3, clientX: 0, clientY: 0 });
   assert.equal(t.up({ pointerId: 3, clientX: 0, clientY: 0 }), true);
 });
+test('pickCell: the raised selected piece does not hide a target behind it', () => {
+  const sel = { object: { userData: { kind: 'piece', selected: true, r: 10, c: 5 } } };
+  assert.deepEqual(pickCell([sel, hit('target', 9, 5)]), [9, 5]);
+  assert.deepEqual(pickCell([sel, hit('cell', 9, 5)]), [10, 5]);  // no target: still deselects
+});

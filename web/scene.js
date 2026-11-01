@@ -3,9 +3,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { colorForHeight } from './terrain.js';
 import { pickCell, createClickTracker } from './pick.js';
+import { HEIGHT_UNIT, FLOOR, boardSphere, fitCamera } from './camera.js';
 
-const HEIGHT_UNIT = 0.5;
-const FLOOR = -11 * HEIGHT_UNIT;
 const PIECE_H = 0.25;
 const LIFT = 0.15; // selected piece is raised by this much
 const TEAM_COLOR = { black: 0x111111, red: 0xcc0000 };
@@ -51,6 +50,10 @@ function pieceMesh(piece) {
 
 const disposeGeometries = (o) => o.traverse((x) => x.geometry?.dispose());
 
+/**
+ * Mounts the 3D view in `container`. Throws when WebGL is unavailable.
+ * @param {HTMLElement} container
+ */
 export function createScene(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -75,6 +78,17 @@ export function createScene(container) {
   scene.add(boardGroup, pieceGroup, highlightGroup);
 
   let board = null;
+  let sphere = null;
+
+  // Frame the whole board, keeping the current viewing direction (the player may have rotated).
+  function frame() {
+    if (!sphere) return;
+    const dir = camera.position.clone().sub(controls.target).toArray();
+    const { position, target } = fitCamera(sphere.center, sphere.radius, camera.fov, camera.aspect, dir);
+    camera.position.fromArray(position);
+    controls.target.fromArray(target);
+    controls.update();
+  }
   let clickCb = () => {};
   const pieceMeshes = new Map(); // piece id -> Group, reused across moves
 
@@ -94,9 +108,13 @@ export function createScene(container) {
         const col = new THREE.Mesh(geo, solid(colorForHeight(b[r][c])));
         col.position.set(cx(c), FLOOR + h / 2, cz(r));
         col.userData = { kind: 'cell', r, c };
-        col.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo), EDGE()));
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), EDGE());
+        edges.raycast = () => {}; // outlines are decoration: keep them out of click picking
+        col.add(edges);
         boardGroup.add(col);
       }
+    sphere = boardSphere(b);
+    frame();
   }
 
   function setPieces(pieces, selectedId) {
@@ -107,7 +125,7 @@ export function createScene(container) {
       let g = pieceMeshes.get(p.id);
       if (!g) { g = pieceMesh(p); pieceMeshes.set(p.id, g); pieceGroup.add(g); }
       g.position.set(cx(p.c), top(board[p.r][p.c]) + (p.id === selectedId ? LIFT : 0), cz(p.r));
-      g.traverse((x) => { x.userData = { kind: 'piece', r: p.r, c: p.c }; });
+      g.traverse((x) => { x.userData = { kind: 'piece', selected: p.id === selectedId, r: p.r, c: p.c }; });
     }
   }
 
@@ -142,6 +160,7 @@ export function createScene(container) {
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    frame();
   }).observe(container);
 
   renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });

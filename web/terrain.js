@@ -20,12 +20,19 @@ export const LANDSCAPES = [
   { id: 14, group: 'Spécial', name: 'Fosse des Mariannes', kind: 'min' },
 ];
 
+/** Landscape selected when the page opens: Forêts moyennes. */
+export const DEFAULT_LANDSCAPE = 5;
+
 // color_stick from game.py, indexed by height + 10, three heights per color.
 const COLORS = [0x000080, 0x1e90ff, 0x8b4513, 0x008000, 0x808080, 0xffffff, 0x87ceeb];
 
 const grid = (v = 0) => Array.from({ length: SIZE }, () => Array(SIZE).fill(v));
 const randInt = (rng, lo, hi) => lo + Math.floor(rng() * (hi - lo)); // np.random.randint: hi excluded
 
+/**
+ * Height limits per cell: ring k (1..5) from the border can go from -2k to +2k.
+ * @returns {{min: number[][], max: number[][]}} fresh 12x12 grids
+ */
 export function boardBounds() {
   const min = grid(), max = grid();
   for (let k = 1; k <= 5; k++)
@@ -43,6 +50,10 @@ function violates(b, i, j) {
     h > BOUNDS.max[i][j] || h < BOUNDS.min[i][j];
 }
 
+/**
+ * True when every playable cell is within its bounds and within 2 units of its 4 neighbours.
+ * @param {number[][]} board 12x12 heights
+ */
 export function isValidBoard(board) {
   for (let i = 1; i < SIZE - 1; i++)
     for (let j = 1; j < SIZE - 1; j++) if (violates(board, i, j)) return false;
@@ -95,6 +106,12 @@ function genMixBoard(b, rng, push) {
   }
 }
 
+/**
+ * Random board for a landscape, as game.py generates it.
+ * @param {number} landscapeId id from LANDSCAPES
+ * @param {() => number} [rng] uniform [0, 1) source
+ * @returns {number[][]} 12x12 heights with a 0 border
+ */
 export function generateBoard(landscapeId, rng = Math.random) {
   const l = LANDSCAPES.find((x) => x.id === landscapeId);
   if (!l) throw new Error(`Terrain inconnu : ${landscapeId}`);
@@ -106,4 +123,5 @@ export function generateBoard(landscapeId, rng = Math.random) {
   return b;
 }
 
+/** Terrain color (0xRRGGBB) for a height in -10..10, from game.py's color_stick. */
 export const colorForHeight = (h) => COLORS[Math.min(6, Math.max(0, Math.floor((h + 10) / 3)))];

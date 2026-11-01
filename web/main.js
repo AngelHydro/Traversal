@@ -1,5 +1,5 @@
 // Page wiring: landscape choice, turn loop, captures, win.
-import { LANDSCAPES, generateBoard } from './terrain.js';
+import { LANDSCAPES, DEFAULT_LANDSCAPE, generateBoard } from './terrain.js';
 import { initialPieces, legalMoves, movePiece, winner, other, dealBoard } from './rules.js';
 import { createScene } from './scene.js';
 
@@ -15,7 +15,7 @@ for (const group of [...new Set(LANDSCAPES.map((l) => l.group))]) {
   for (const l of LANDSCAPES.filter((x) => x.group === group)) og.append(new Option(l.name, l.id));
   select.append(og);
 }
-select.value = '5';
+select.value = String(DEFAULT_LANDSCAPE);
 
 let view;
 try {
