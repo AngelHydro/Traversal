@@ -1,12 +1,19 @@
-// Page wiring: landscape choice, turn loop, captures, win.
+// Page wiring: landscape choice, clicks, and what the player is told.
 import { LANDSCAPES, DEFAULT_LANDSCAPE, generateBoard } from './terrain.js';
-import { initialPieces, legalMoves, movePiece, winner, other, dealBoard } from './rules.js';
+import { dealBoard } from './rules.js';
+import { newGameState, handleClick, targets, TEAM } from './play.js';
 import { createScene } from './scene.js';
 
-const TEAM = { black: 'noirs', red: 'rouges' };
-const PIECE = { soldier: 'soldat', guard: 'garde', medic: 'médecin' };
-const square = (r, c) => 'abcdefghij'[c - 1] + r; // column letter + row number
 const $ = (id) => document.getElementById(id);
+
+// Shown instead of a blank page when the game cannot start; the detail helps diagnose a browser.
+function showError(message, e) {
+  $('error').textContent = message + (e ? ` (détail : ${e.message || e})` : '');
+  $('error').hidden = false;
+}
+const NO_WEBGL = "Impossible d'afficher le plateau : WebGL n'est pas disponible dans ce navigateur. "
+  + "Activez l'accélération graphique (Edge : Paramètres › Système et performances › « Utiliser l'accélération graphique », "
+  + "Chrome : Paramètres › Système), puis redémarrez le navigateur, ou essayez Firefox.";
 
 const select = $('landscape');
 for (const group of [...new Set(LANDSCAPES.map((l) => l.group))]) {
@@ -18,51 +25,47 @@ for (const group of [...new Set(LANDSCAPES.map((l) => l.group))]) {
 select.value = String(DEFAULT_LANDSCAPE);
 
 let view;
-try {
-  view = createScene($('view'));
-} catch (e) {
-  $('error').textContent = "Impossible d'afficher le plateau : votre navigateur ne prend pas en charge WebGL.";
-  $('error').hidden = false;
-  throw e;
-}
 let state;
 
 function render() {
-  const sel = state.pieces.find((p) => p.id === state.selected);
   view.setPieces(state.pieces, state.selected);
-  view.setHighlights(sel ? legalMoves(state.board, state.pieces, sel) : []);
+  view.setHighlights(targets(state));
   $('status').textContent = state.winner ? `Victoire des ${TEAM[state.winner]} !` : `Au tour des ${TEAM[state.turn]}`;
-  $('status').className = state.winner ? 'win' : '';
-  $('last').textContent = state.last;
+  $('status').className = state.winner ? 'win' : state.turn;
+  $('last').textContent = state.message;
   $('captures').textContent = `Captures — noirs : ${state.captured.black}, rouges : ${state.captured.red}`;
 }
 
 function newGame() {
-  const board = dealBoard(() => generateBoard(Number(select.value)));
-  state = { board, pieces: initialPieces(), turn: 'black', selected: null, winner: null, captured: { black: 0, red: 0 }, last: '' };
+  const id = Number(select.value);
+  const board = dealBoard(() => generateBoard(id));
+  state = newGameState(board, LANDSCAPES.find((l) => l.id === id).name);
   view.setBoard(board);
   render();
 }
 
-view.onCellClick((r, c) => {
-  if (state.winner) return;
-  const sel = state.pieces.find((p) => p.id === state.selected);
-  if (sel && legalMoves(state.board, state.pieces, sel).some(([mr, mc]) => mr === r && mc === c)) {
-    const victim = state.pieces.find((q) => q.r === r && q.c === c);
-    state.pieces = movePiece(state.pieces, sel.id, r, c);
-    if (victim) state.captured[state.turn]++;
-    state.last = `Dernier coup : ${PIECE[sel.type]} ${TEAM[sel.team]} ${square(sel.r, sel.c)} → ${square(r, c)}`
-      + (victim ? `, capture un ${PIECE[victim.type]}` : '');
-    state.turn = other(state.turn);
-    state.selected = null;
-    state.winner = winner(state.board, state.pieces, state.turn);
-  } else {
-    const p = state.pieces.find((q) => q.r === r && q.c === c && q.team === state.turn);
-    state.selected = p && p.id !== state.selected ? p.id : null;
-  }
-  render();
-});
+// Errors in event handlers are shown too, so the game never silently stops responding.
+const guarded = (fn) => (...args) => {
+  try { fn(...args); } catch (e) { showError('Une erreur est survenue.', e); throw e; }
+};
 
-$('new').addEventListener('click', newGame);
-select.addEventListener('change', newGame);
-newGame();
+try {
+  view = createScene($('view'));
+  // The GPU can drop the context (driver reset, too many tabs): say so, and clear it once restored.
+  const LOST = 'Le rendu 3D a été interrompu par le navigateur. Rechargez la page si le plateau ne revient pas.';
+  $('view').addEventListener('webglcontextlost', () => { if ($('error').hidden) showError(LOST); }, true);
+  // Only clear our own banner: another error shown meanwhile must stay visible.
+  $('view').addEventListener('webglcontextrestored', () => {
+    if ($('error').textContent === LOST) $('error').hidden = true;
+  }, true);
+  view.onCellClick(guarded((r, c) => {
+    state = handleClick(state, r, c);
+    render();
+  }));
+  $('new').addEventListener('click', guarded(newGame));
+  select.addEventListener('change', guarded(newGame));
+  newGame();
+} catch (e) {
+  showError(/WebGL/i.test(String(e && e.message)) ? NO_WEBGL : 'Impossible de démarrer le jeu.', e);
+  throw e;
+}
