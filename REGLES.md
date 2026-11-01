@@ -112,6 +112,6 @@ Là où la fiche laisse un point ouvert, la version en ligne applique ces choix 
 - **Arrivée.** Sortir du plateau est le coup du tour : la pièce rejoint la dernière rangée, puis sort avec le point de Mouvement restant.
 - **Coups.** Un coup est le tour d'un joueur. La limite est donc de 200 tours au total.
 - **Joueur bloqué.** Un joueur qui n'a aucun coup autorisé passe son tour. Si aucun des deux ne peut jouer, la partie s'arrête et se décide comme à la limite de coups.
-- **Équité des plateaux.** Chaque plateau est symétrique en miroir : la moitié haute est le reflet de la moitié basse, donc les deux camps ont exactement le même terrain devant eux.
+- **Équité des plateaux.** Le terrain reste entièrement aléatoire. Pour limiter le déséquilibre, 40 plateaux sont tirés et le plus équilibré est retenu. Le déséquilibre se mesure comme l'écart entre les deux camps du coût moyen pour atteindre le milieu du plateau depuis les cases de départ, plus l'écart de hauteur moyenne entre les deux moitiés. Un léger avantage pour l'un des camps reste possible.
 - **Modes de terrain.** Ils reposent sur le générateur d'origine (`game.py`). Le mode « Aléatoire » tire l'un des cinq autres.
 - **Plateau numéroté.** Chaque plateau porte un numéro. L'adresse `?terrain=<mode>&plateau=<numéro>` redonne exactement le même plateau, pour rejouer une carte ou la reproduire sur une édition physique.

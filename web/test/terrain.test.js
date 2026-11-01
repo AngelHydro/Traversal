@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateBoard, isValidBoard, colorForHeight, MODES, DEFAULT_MODE, makeRng, SIZE } from '../terrain.js';
+import { generateBoard, isValidBoard, colorForHeight, imbalance, MODES, DEFAULT_MODE, makeRng, SIZE } from '../terrain.js';
 
 const cells = (b) => b.slice(1, 11).flatMap((row) => row.slice(1, 11));
 const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
@@ -12,15 +12,39 @@ test('the six terrain modes of the rules, random by default', () => {
   assert.equal(DEFAULT_MODE, 'random');
 });
 
-test('every mode gives valid, fair (mirrored top/bottom) boards, fast', () => {
+const mirrored = (b) => b.every((row, r) => r < 1 || r > 10 || row.every((v, c) => v === b[11 - r][c]));
+
+test('every mode gives valid boards, fast', () => {
   for (const { id } of MODES) for (let seed = 1; seed <= 30; seed++) {
     const t = Date.now();
     const b = generateBoard(id, makeRng(seed));
     assert.ok(Date.now() - t < 500, `${id} too slow`);
     assert.equal(b.length, SIZE);
     assert.ok(isValidBoard(b), `${id} seed ${seed}`);
-    for (let r = 1; r <= 10; r++) for (let c = 1; c <= 10; c++) assert.equal(b[r][c], b[11 - r][c], `${id} not mirrored`);
     for (let i = 0; i < SIZE; i++) for (const v of [b[0][i], b[11][i], b[i][0], b[i][11]]) assert.equal(v, 0);
+  }
+});
+
+test('boards stay random: no forced symmetry', () => {
+  for (const id of ['mountains', 'valleys', 'highlands', 'woods', 'desert'])
+    assert.ok(Array.from({ length: 20 }, (_, s) => mirrored(generateBoard(id, makeRng(s + 1)))).filter(Boolean).length <= 2, id);
+});
+
+test('imbalance is 0 on a symmetric board and grows when one side has it harder', () => {
+  const b = Array.from({ length: 12 }, () => Array(12).fill(0));
+  assert.equal(imbalance(b), 0);
+  b[9][5] = 2; b[2][5] = 2;
+  assert.equal(imbalance(b), 0);
+  for (let c = 1; c <= 10; c++) b[9][c] = 2;          // a ridge across red's half only
+  assert.ok(imbalance(b) > 2);
+});
+
+test('the most balanced of several random boards is kept', () => {
+  for (const { id } of MODES) {
+    const kept = Array.from({ length: 15 }, (_, s) => imbalance(generateBoard(id, makeRng(s + 1))));
+    const raw = Array.from({ length: 15 }, (_, s) => imbalance(generateBoard(id, makeRng(s + 1), 1)));
+    assert.ok(mean(kept) <= mean(raw) / 2 + 0.05, `${id}: kept ${mean(kept).toFixed(2)} vs raw ${mean(raw).toFixed(2)}`);
+    assert.ok(Math.max(...kept) <= 1.5, `${id}: worst kept ${Math.max(...kept).toFixed(2)}`);
   }
 });
 

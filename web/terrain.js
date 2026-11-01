@@ -120,7 +120,7 @@ function genMixBoard(b, rng, push) {
 // A few hills on a flat plain: repeated +1 pushes in a 3x3 window around random centres.
 function genPeaks(b, rng, peaks) {
   for (let k = 0; k < peaks; k++) {
-    const ci = randInt(rng, 2, 6), cj = randInt(rng, 2, 10); // top half: the board is mirrored afterwards
+    const ci = randInt(rng, 2, 10), cj = randInt(rng, 2, 10);
     for (let n = 0; n < 12; n++) {
       const i = ci + randInt(rng, -1, 2), j = cj + randInt(rng, -1, 2);
       b[i][j] += 1;
@@ -129,28 +129,64 @@ function genPeaks(b, rng, peaks) {
   }
 }
 
-// Fairness: both players face the same terrain. Rows 6..10 copy rows 5..1; rows 5 and 6 end up equal, and
-// the ring bounds are symmetric, so the physics stays valid.
-function mirror(b) {
-  for (let i = 1; i <= 5; i++) b[SIZE - 1 - i] = [...b[i]];
-  return b;
+// Cheapest crossing cost (movement rule: 1 on the flat, height difference + 1 otherwise) from each start
+// column of `fromRow` to any cell of `toRow`, averaged over the six start columns (3..8). Pieces ignored.
+function crossing(b, fromRow, toRow) {
+  const total = [3, 4, 5, 6, 7, 8].reduce((sum, c0) => {
+    const cost = Array.from({ length: SIZE }, () => Array(SIZE).fill(Infinity));
+    cost[fromRow][c0] = 0;
+    const open = [[0, fromRow, c0]];
+    while (open.length) {
+      open.sort((x, y) => x[0] - y[0]);
+      const [d, r, c] = open.shift();
+      if (r === toRow) return sum + d;
+      if (d > cost[r][c]) continue;
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 1 || nr > 10 || nc < 1 || nc > 10) continue;
+        const nd = d + (b[r][c] === b[nr][nc] ? 1 : Math.abs(b[r][c] - b[nr][nc]) + 1);
+        if (nd < cost[nr][nc]) { cost[nr][nc] = nd; open.push([nd, nr, nc]); }
+      }
+    }
+    return sum;
+  }, 0);
+  return total / 6;
 }
 
 /**
- * Random fair board for a terrain mode, built with game.py's generator then mirrored top/bottom.
+ * How much a board favours one side: difference of the average cost to reach the middle of the board
+ * (red from row 10 to row 6, blue from row 1 to row 5: who gets to the contested ground faster; a full
+ * crossing costs the same both ways) plus the difference of mean height of each side's half (high ground
+ * helps in combat). 0 means both sides face equivalent terrain.
+ * @param {number[][]} b 12x12 heights
+ */
+export function imbalance(b) {
+  const half = (rows) => rows.flatMap((r) => b[r].slice(1, 11)).reduce((s, h) => s + h, 0) / 50;
+  return Math.abs(crossing(b, 10, 6) - crossing(b, 1, 5)) + Math.abs(half([6, 7, 8, 9, 10]) - half([1, 2, 3, 4, 5]));
+}
+
+/**
+ * Random board for a terrain mode, built with game.py's generator. Terrain stays fully random; to keep
+ * the game fair, `tries` boards are drawn and the most balanced one (lowest `imbalance`) is kept.
  * @param {string} modeId id from MODES
  * @param {() => number} [rng] uniform [0, 1) source, e.g. makeRng(seed)
+ * @param {number} [tries=40] candidates drawn; 1 returns the first raw board
  * @returns {number[][]} 12x12 heights with a 0 border
  */
-export function generateBoard(modeId, rng = Math.random) {
-  let m = MODES.find((x) => x.id === modeId);
-  if (!m) throw new Error(`Terrain inconnu : ${modeId}`);
-  if (m.id === 'random') m = MODES[1 + Math.floor(rng() * (MODES.length - 1))];
-  const b = grid(0);
-  if (m.kind === 'mix') genMixBoard(b, rng, 250);
-  else if (m.kind === 'peaks') genPeaks(b, rng, m.peaks);
-  else for (let k = 1; k <= 4; k++) genBoard(b, rng, m.push, k, SIZE - k, m.factor);
-  return mirror(b);
+export function generateBoard(modeId, rng = Math.random, tries = 40) {
+  const base = MODES.find((x) => x.id === modeId);
+  if (!base) throw new Error(`Terrain inconnu : ${modeId}`);
+  let best = null, bestScore = Infinity;
+  for (let k = 0; k < tries && bestScore > 0.25; k++) {
+    const m = base.id === 'random' ? MODES[1 + Math.floor(rng() * (MODES.length - 1))] : base;
+    const b = grid(0);
+    if (m.kind === 'mix') genMixBoard(b, rng, 250);
+    else if (m.kind === 'peaks') genPeaks(b, rng, m.peaks);
+    else for (let i = 1; i <= 4; i++) genBoard(b, rng, m.push, i, SIZE - i, m.factor);
+    const score = tries === 1 ? 0 : imbalance(b);
+    if (score < bestScore) { best = b; bestScore = score; }
+  }
+  return best;
 }
 
 /** Terrain color (0xRRGGBB) for a height in -10..10, from game.py's color_stick. */
