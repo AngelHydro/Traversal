@@ -112,3 +112,13 @@ test('each played move records what happened, for the animations', () => {
   assert.deepEqual(s.last.path, [[5, 5], [5, 6], [5, 7]]);
   assert.equal(start().last, null);
 });
+test('cells only reachable by an explorer special move are flagged, so they can be drawn apart', () => {
+  const b = flat();                                         // checkerboard 0/2: every step costs 3
+  for (let r = 1; r <= 10; r++) for (let c = 1; c <= 10; c++) b[r][c] = (r + c) % 2 ? 0 : 2;
+  const pcs = [P('re', 'explorer', 'red', 5, 5), P('bx', 'explorer', 'blue', 1, 1)];
+  const hl = highlights(handleClick({ ...newGameState(b, 'Bois'), pieces: pcs }, 5, 5));
+  const cell = (r, c) => hl.moves.find(({ to }) => to[0] === r && to[1] === c);
+  assert.deepEqual(cell(4, 5), { to: [4, 5], cost: 3 });               // one step: normal, with its cost
+  assert.deepEqual(cell(3, 5), { to: [3, 5], special: 'jump' });       // two steps would cost 6 > 5
+  assert.deepEqual(cell(4, 6), { to: [4, 6], special: 'diagonal' });
+});

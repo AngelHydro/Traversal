@@ -41,7 +41,8 @@ export function highlights(state) {
   if (!sel) return { moves: [], attacks: [], refused: [], exits: [] };
   const acts = actionsFor(state, sel);
   return {
-    moves: cheapest(acts.filter((a) => a.kind === 'move')).map((a) => ({ to: a.to, cost: a.cost })),
+    // Cells only an explorer special reaches carry `special` instead of a cost: they are drawn apart.
+    moves: cheapest(acts.filter((a) => a.kind === 'move')).map((a) => (a.special ? { to: a.to, special: a.special } : { to: a.to, cost: a.cost })),
     attacks: acts.filter((a) => a.kind === 'attack' && a.allowed).map((a) => a.to),
     refused: [...new Map(acts.filter((a) => a.kind === 'attack' && !a.allowed).map((a) => [a.to.join(), a.to])).values()]
       .filter((to) => !acts.some((a) => a.kind === 'attack' && a.allowed && a.to.join() === to.join())),
@@ -101,7 +102,8 @@ export function handleClick(state, r, c) {
   }
   const exit = acts.some((a) => a.kind === 'exit') ? ', ou au-delà de l\'arrivée pour la franchir' : '';
   return { ...state, selected: here.id,
-    message: `${name} (Mouvement ${move}, Force ${strength}) : case jaune pour se déplacer, rouge pour attaquer${exit}.`
+    message: `${name} (Mouvement ${move}, Force ${strength}) : case jaune pour se déplacer, rouge pour attaquer${exit}`
+      + (here.type === 'explorer' ? ', violette pour un pas en diagonale ou un bond (sans coût de relief).' : '.')
       + attackSummary(state, here) };
 }
 

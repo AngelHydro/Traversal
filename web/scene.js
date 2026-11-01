@@ -28,6 +28,7 @@ const NOTCH = () => mat('notch', () => new THREE.LineBasicMaterial({ color: 0x00
 const PLATES = {
   move: () => flat('move', 0xffd700, 0.6),
   exit: () => flat('exit', 0xffd700, 0.6),
+  special: () => flat('special', 0xb07cff, 0.6),
   attack: () => flat('attack', 0xff2d2d, 0.7),
   refused: () => flat('refused', 0x6b6b6b, 0.7),
 };
@@ -216,7 +217,8 @@ export function createScene(container) {
   }
 
   /**
-   * Yellow plates: cells to move to and cells past the finish line; red: enemies that can be attacked;
+   * Yellow plates: cells to move to and cells past the finish line; violet: cells only an explorer special
+   * move reaches (diagonal step or jump, which ignore height); red: enemies that can be attacked;
    * grey: enemies in reach but too strong. options.showCosts writes the movement cost on yellow plates.
    */
   function setHighlights({ moves = [], attacks = [], refused = [], exits = [] }, { showCosts = true } = {}) {
@@ -232,7 +234,7 @@ export function createScene(container) {
       }
       highlightGroup.add(p);
     };
-    for (const m of moves) plate(m.to, 'move', m.cost);
+    for (const m of moves) plate(m.to, m.special ? 'special' : 'move', m.cost);
     for (const e of exits) plate(e.to, 'exit', e.cost);
     for (const a of attacks) plate(a, 'attack');
     for (const a of refused) plate(a, 'refused');

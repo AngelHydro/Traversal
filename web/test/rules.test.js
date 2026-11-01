@@ -184,3 +184,20 @@ test('pathTo gives the cells a piece walks through, for moves, attacks, specials
   const gx = game(flat(), [x]);
   assert.deepEqual(pathTo(gx, x, actionsFor(gx, x).find((a) => a.kind === 'exit' && a.to[1] === 5)), [[1, 5], [0, 5]]);
 });
+
+test('explorer jump cannot pass over a piece, ally or enemy', () => {
+  const e = P('e', 'explorer', 'blue', 4, 5);
+  const ps = [e, P('rs', 'sentinel', 'red', 5, 5), P('rx', 'explorer', 'red', 6, 5), P('bv', 'vanguard', 'blue', 4, 6)];
+  const acts = actionsFor(game(flat(), ps), e);
+  assert.ok(!acts.some((a) => a.special === 'jump' && at(a, 6, 5)), 'no jump attack over the sentinel');
+  assert.ok(!acts.some((a) => a.special === 'jump' && at(a, 4, 7)), 'no jump over its own vanguard');
+  assert.ok(acts.some((a) => a.special === 'jump' && at(a, 2, 5)), 'a free jump is still allowed');
+});
+
+test('explorer diagonal cannot squeeze between two pieces', () => {
+  const e = P('e', 'explorer', 'blue', 4, 5);
+  const ps = [e, P('rs', 'sentinel', 'red', 5, 5), P('bv', 'vanguard', 'blue', 4, 6)];
+  const acts = actionsFor(game(flat(), ps), e);
+  assert.ok(!acts.some((a) => a.special === 'diagonal' && at(a, 5, 6)), 'blocked: both corners taken');
+  assert.ok(acts.some((a) => a.special === 'diagonal' && at(a, 5, 4)), 'one free corner is enough');
+});
