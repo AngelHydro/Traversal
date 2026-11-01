@@ -4,6 +4,8 @@ import { initialPieces, legalMoves, movePiece, winner, other, dealBoard } from '
 import { createScene } from './scene.js';
 
 const TEAM = { black: 'noirs', red: 'rouges' };
+const PIECE = { soldier: 'soldat', guard: 'garde', medic: 'médecin' };
+const square = (r, c) => 'abcdefghij'[c - 1] + r; // column letter + row number
 const $ = (id) => document.getElementById(id);
 
 const select = $('landscape');
@@ -15,7 +17,14 @@ for (const group of [...new Set(LANDSCAPES.map((l) => l.group))]) {
 }
 select.value = '5';
 
-const view = createScene($('view'));
+let view;
+try {
+  view = createScene($('view'));
+} catch (e) {
+  $('error').textContent = "Impossible d'afficher le plateau : votre navigateur ne prend pas en charge WebGL.";
+  $('error').hidden = false;
+  throw e;
+}
 let state;
 
 function render() {
@@ -24,12 +33,13 @@ function render() {
   view.setHighlights(sel ? legalMoves(state.board, state.pieces, sel) : []);
   $('status').textContent = state.winner ? `Victoire des ${TEAM[state.winner]} !` : `Au tour des ${TEAM[state.turn]}`;
   $('status').className = state.winner ? 'win' : '';
+  $('last').textContent = state.last;
   $('captures').textContent = `Captures — noirs : ${state.captured.black}, rouges : ${state.captured.red}`;
 }
 
 function newGame() {
   const board = dealBoard(() => generateBoard(Number(select.value)));
-  state = { board, pieces: initialPieces(), turn: 'black', selected: null, winner: null, captured: { black: 0, red: 0 } };
+  state = { board, pieces: initialPieces(), turn: 'black', selected: null, winner: null, captured: { black: 0, red: 0 }, last: '' };
   view.setBoard(board);
   render();
 }
@@ -38,9 +48,11 @@ view.onCellClick((r, c) => {
   if (state.winner) return;
   const sel = state.pieces.find((p) => p.id === state.selected);
   if (sel && legalMoves(state.board, state.pieces, sel).some(([mr, mc]) => mr === r && mc === c)) {
-    const before = state.pieces.length;
+    const victim = state.pieces.find((q) => q.r === r && q.c === c);
     state.pieces = movePiece(state.pieces, sel.id, r, c);
-    if (state.pieces.length < before) state.captured[state.turn]++;
+    if (victim) state.captured[state.turn]++;
+    state.last = `Dernier coup : ${PIECE[sel.type]} ${TEAM[sel.team]} ${square(sel.r, sel.c)} → ${square(r, c)}`
+      + (victim ? `, capture un ${PIECE[victim.type]}` : '');
     state.turn = other(state.turn);
     state.selected = null;
     state.winner = winner(state.board, state.pieces, state.turn);

@@ -15,13 +15,14 @@
   select, button { font: inherit; padding: 4px 8px; }
   #status { width: 100%; font-weight: 600; }
   #status.win { color: var(--accent); }
+  #last { width: 100%; font-size: 13px; }
   #captures { width: 100%; font-size: 13px; color: #444; }
   #error { position: fixed; bottom: 12px; left: 12px; right: 12px; padding: 10px; background: #fee; color: #900; border-radius: 6px; }
 </style>
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three": "./web/vendor/three.module.js",
+  "three/addons/": "./web/vendor/addons/"
 } }
 </script>
 </head>
@@ -31,11 +32,12 @@
   <h1>Traversal</h1>
   <select id="landscape" aria-label="Terrain"></select>
   <button id="new">Nouvelle partie</button>
-  <div id="status"></div>
+  <div id="status" aria-live="polite"></div>
+  <div id="last" aria-live="polite"></div>
   <div id="captures"></div>
 </div>
 <noscript><div>Ce jeu nécessite JavaScript.</div></noscript>
-<div id="error" hidden>Impossible de charger le jeu (connexion au CDN ?)</div>
+<div id="error" role="alert" hidden>Impossible de charger le jeu.</div>
 <script type="module" src="./web/main.js" onerror="document.getElementById('error').hidden = false"></script>
 </body>
 </html>

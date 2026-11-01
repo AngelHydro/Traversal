@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Aucun outil de build ni `npm install` : les fichiers du repo sont servis tels quels par Pages.
-- Three.js est épinglé : `https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js` et `https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/` pour `three/addons/`.
+- Three.js 0.160.0 est embarqué dans `web/vendor/` (licence MIT incluse), mappé par l'importmap sur `three` et `three/addons/`. La première version passait par jsDelivr ; la revue de la PR a demandé de l'embarquer, pour ne pas exécuter de code tiers non vérifié et ne plus dépendre du CDN.
 - Tous les chemins sont relatifs (`./web/main.js`, jamais `/web/...`), car le site est servi sous `/Traversal/`.
 - Plateau stocké en `12×12` avec une bordure fixe à 0 ; cases jouables `r, c ∈ 1..10`, comme dans `game.py`.
 - `game.py` et le reste du code Python ne sont pas modifiés.
