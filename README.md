@@ -1,5 +1,7 @@
 # Board Game
 
+**[Jouer en ligne](https://angelhydro.github.io/Traversal/)**
+
 A novel board game that addresses issues prominent in many games, but particularly classical games, such as chess and go.
 
 ## Origin Story
