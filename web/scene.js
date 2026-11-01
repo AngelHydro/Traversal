@@ -68,6 +68,7 @@ export function createScene(container) {
   scene.add(boardGroup, pieceGroup, highlightGroup);
 
   let board = null;
+  let currentTurn;
   let sphere = null;
 
   // Frame the whole board, keeping the current viewing direction (the player may have rotated).
@@ -107,7 +108,8 @@ export function createScene(container) {
     frame();
   }
 
-  function setPieces(pieces, selectedId) {
+  function setPieces(pieces, selectedId, turn) {
+    currentTurn = turn;
     const alive = new Set(pieces.map((p) => p.id));
     for (const [id, g] of pieceMeshes)
       if (!alive.has(id)) { pieceGroup.remove(g); disposeGeometries(g); pieceMeshes.delete(id); }
@@ -115,7 +117,7 @@ export function createScene(container) {
       let g = pieceMeshes.get(p.id);
       if (!g) { g = pieceMesh(p); pieceMeshes.set(p.id, g); pieceGroup.add(g); }
       g.position.set(cx(p.c), top(board[p.r][p.c]) + (p.id === selectedId ? LIFT : 0), cz(p.r));
-      g.traverse((x) => { x.userData = { kind: 'piece', selected: p.id === selectedId, r: p.r, c: p.c }; });
+      g.traverse((x) => { x.userData = { kind: 'piece', team: p.team, selected: p.id === selectedId, r: p.r, c: p.c }; });
     }
   }
 
@@ -143,7 +145,7 @@ export function createScene(container) {
     const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
-    const cell = pickCell(ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true));
+    const cell = pickCell(ray.intersectObjects([highlightGroup, pieceGroup, boardGroup], true), currentTurn);
     if (cell) clickCb(cell[0], cell[1]);
   });
 

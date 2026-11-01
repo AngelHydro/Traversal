@@ -67,3 +67,14 @@ test('colorForHeight covers -10..10', () => {
   assert.equal(colorForHeight(0), 0x008000);
   assert.equal(colorForHeight(10), 0x87ceeb);
 });
+
+test('Aléatoire draws one terrain mode, uniformly, then builds the whole board with it', () => {
+  const seen = new Set();
+  for (let seed = 1; seed <= 60; seed++) {
+    const r = makeRng(seed);
+    const sub = MODES[1 + Math.floor(r() * (MODES.length - 1))];
+    seen.add(sub.id);
+    assert.deepEqual(generateBoard('random', makeRng(seed)), generateBoard(sub.id, r), `seed ${seed}`);
+  }
+  assert.equal(seen.size, MODES.length - 1);
+});

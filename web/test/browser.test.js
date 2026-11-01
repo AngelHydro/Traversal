@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { extname } from 'node:path';
 import * as THREE from '../vendor/three.module.js';
 import { generateBoard, makeRng } from '../terrain.js';
-import { dealBoard, newGame, actionsFor, applyAction } from '../rules.js';
+import { newGame, actionsFor, applyAction } from '../rules.js';
 import { square } from '../play.js';
 import { boardSphere, fitCamera, HEIGHT_UNIT, VIEW_DIR } from '../camera.js';
 
@@ -61,8 +61,7 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     await page.waitForFunction(() => document.getElementById('status').textContent !== '');
     assert.equal(await page.textContent('#status'), 'Au tour du joueur 1 (rouge)');
     assert.match(await page.textContent('#score'), /Plateau n° 5/);
-    const rng = makeRng(5);
-    const board = dealBoard(() => generateBoard('woods', rng));
+    const board = generateBoard('woods', makeRng(5));
 
     const canvas = page.locator('#view canvas');
     const rect0 = await canvas.boundingBox();

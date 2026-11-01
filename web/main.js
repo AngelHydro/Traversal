@@ -1,6 +1,6 @@
 // Page wiring: terrain mode, board number, clicks, exit button, and what the player is told.
 import { MODES, DEFAULT_MODE, generateBoard, makeRng } from './terrain.js';
-import { dealBoard, MOVE_LIMIT } from './rules.js';
+import { MOVE_LIMIT } from './rules.js';
 import { newGameState, handleClick, handleExit, highlights, TEAM } from './play.js';
 import { createScene } from './scene.js';
 
@@ -31,7 +31,7 @@ let state;
 
 function render() {
   const hl = highlights(state);
-  view.setPieces(state.pieces, state.selected);
+  view.setPieces(state.pieces, state.selected, state.winner ? undefined : state.turn);
   view.setHighlights(hl.moves, hl.attacks);
   $('exit').hidden = !hl.canExit;
   $('status').textContent = state.winner
@@ -47,8 +47,7 @@ function newGame() {
   const mode = MODES.find((m) => m.id === select.value);
   const boardSeed = seed || Math.floor(Math.random() * 1e6) + 1;
   seed = null; // only the first game uses the seed from the address
-  const rng = makeRng(boardSeed);
-  const board = dealBoard(() => generateBoard(mode.id, rng));
+  const board = generateBoard(mode.id, makeRng(boardSeed));
   state = { ...newGameState(board, mode.name), seed: boardSeed };
   history.replaceState(null, '', `?terrain=${mode.id}&plateau=${boardSeed}`);
   view.setBoard(board);

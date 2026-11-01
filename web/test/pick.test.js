@@ -35,3 +35,10 @@ test('pickCell: the raised selected piece does not hide a target behind it', () 
   assert.deepEqual(pickCell([sel, hit('target', 9, 5)]), [9, 5]);
   assert.deepEqual(pickCell([sel, hit('cell', 9, 5)]), [10, 5]);  // no target: still deselects
 });
+test("pickCell: another piece in front of a target doesn't steal the click, except the player's own", () => {
+  const enemy = { object: { userData: { kind: 'piece', team: 'blue', r: 4, c: 5 } } };
+  assert.deepEqual(pickCell([enemy, hit('target', 3, 5)], 'red'), [3, 5]);
+  const own = { object: { userData: { kind: 'piece', team: 'red', r: 4, c: 5 } } };
+  assert.deepEqual(pickCell([own, hit('target', 3, 5)], 'red'), [4, 5]);   // selects that piece instead
+  assert.deepEqual(pickCell([enemy, hit('cell', 4, 5)], 'red'), [4, 5]);   // no target: the enemy's cell
+});

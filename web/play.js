@@ -31,7 +31,8 @@ export function highlights(state) {
   if (!sel) return { moves: [], attacks: [], canExit: false };
   const acts = actionsFor(state, sel);
   return {
-    moves: acts.filter((a) => a.kind === 'move').map((a) => a.to),
+    // An explorer can reach a cell both normally and with a special move: draw it once.
+    moves: [...new Map(acts.filter((a) => a.kind === 'move').map((a) => [a.to.join(), a.to])).values()],
     attacks: acts.filter((a) => a.kind === 'attack' && a.allowed).map((a) => a.to),
     canExit: acts.some((a) => a.kind === 'exit'),
   };

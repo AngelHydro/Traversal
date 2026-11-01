@@ -3,14 +3,20 @@
 // hits: raycaster intersections, nearest first; userData = { kind: 'piece'|'cell'|'target', r, c }.
 // The nearest piece wins (selecting another piece), unless it is the selected one in front of a target; otherwise a highlighted target wins even when a
 // nearer column hides it (moving downhill towards the camera); otherwise the nearest cell.
-/** @param {Array<{object: {userData: object}}>} hits @returns {[number, number]|null} cell [r, c] */
-export function pickCell(hits) {
+/**
+ * @param {Array<{object: {userData: object}}>} hits @param {string} [turn] team to move
+ * @returns {[number, number]|null} cell [r, c]
+ */
+export function pickCell(hits, turn) {
   const tagged = hits.map((h) => h.object.userData).filter((u) => u.r !== undefined);
   const first = tagged[0];
   if (!first) return null;
   const target = tagged.find((x) => x.kind === 'target');
   // The selected piece is raised and can cover the target right behind it: the target wins then.
-  const u = first.kind === 'piece' && !(first.selected && target) ? first : target || first;
+  // Only one of the mover's own pieces may stand in front of a target and take the click (to select it);
+  // an enemy or the raised selected piece must not hide a cell the player is aiming at.
+  const ownPiece = first.kind === 'piece' && !first.selected && (turn === undefined || first.team === turn);
+  const u = ownPiece || !target ? first : target;
   return [u.r, u.c];
 }
 

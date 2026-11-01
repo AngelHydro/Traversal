@@ -167,18 +167,20 @@ export function imbalance(b) {
 
 /**
  * Random board for a terrain mode, built with game.py's generator. Terrain stays fully random; to keep
- * the game fair, `tries` boards are drawn and the most balanced one (lowest `imbalance`) is kept.
+ * the game fair, boards are drawn until one has an `imbalance` of 0.25 or less, up to `tries` boards,
+ * and the most balanced one drawn is kept.
  * @param {string} modeId id from MODES
  * @param {() => number} [rng] uniform [0, 1) source, e.g. makeRng(seed)
  * @param {number} [tries=40] candidates drawn; 1 returns the first raw board
  * @returns {number[][]} 12x12 heights with a 0 border
  */
 export function generateBoard(modeId, rng = Math.random, tries = 40) {
-  const base = MODES.find((x) => x.id === modeId);
-  if (!base) throw new Error(`Terrain inconnu : ${modeId}`);
+  const m = MODES.find((x) => x.id === modeId);
+  if (!m) throw new Error(`Terrain inconnu : ${modeId}`);
+  // Aléatoire draws its mode once, uniformly: balancing must not favour the modes that balance easily.
+  if (m.id === 'random') return generateBoard(MODES[1 + Math.floor(rng() * (MODES.length - 1))].id, rng, tries);
   let best = null, bestScore = Infinity;
   for (let k = 0; k < tries && bestScore > 0.25; k++) {
-    const m = base.id === 'random' ? MODES[1 + Math.floor(rng() * (MODES.length - 1))] : base;
     const b = grid(0);
     if (m.kind === 'mix') genMixBoard(b, rng, 250);
     else if (m.kind === 'peaks') genPeaks(b, rng, m.peaks);

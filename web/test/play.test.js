@@ -75,3 +75,9 @@ test('a blocked piece explains itself', () => {
   assert.equal(s.selected, null);
   assert.match(s.message, /bloquée/);
 });
+test('each reachable cell is highlighted once, even when an explorer has two ways to reach it', () => {
+  const s = handleClick(start([P('re', 'explorer', 'red', 5, 5), P('bx', 'explorer', 'blue', 1, 1)]), 5, 5);
+  const keys = highlights(s).moves.map(([r, c]) => `${r},${c}`);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(keys.includes('4,4'));
+});

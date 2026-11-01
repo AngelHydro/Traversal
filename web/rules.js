@@ -174,14 +174,3 @@ export function applyAction(state, pieceId, action) {
   }
   return next;
 }
-
-/** Draws boards until both sides can act from the start. @param {() => number[][]} generate */
-export function dealBoard(generate, tries = 50) {
-  let board = generate();
-  for (let k = 1; k < tries; k++) {
-    const g = newGame(board);
-    if (canAct(g, 'red') && canAct(g, 'blue')) break;
-    board = generate();
-  }
-  return board;
-}
