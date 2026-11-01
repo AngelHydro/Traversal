@@ -1,4 +1,5 @@
 // Traversal rules (latest rule sheet). Pure functions, no DOM.
+import { MinHeap } from './heap.js';
 // Board: 12x12 heights with a 0 border; playable cells r, c in 1..10. Row 1 is the top of the screen.
 // Player 1 (red) starts on row 10 (bottom) and exits past row 1; player 2 (blue) the opposite.
 
@@ -46,10 +47,10 @@ function pathCosts(state, piece) {
   const { board, pieces } = state;
   const occupied = new Set(pieces.map((p) => key(p.r, p.c)));
   const cost = new Map([[key(piece.r, piece.c), 0]]);
-  const open = [[0, piece.r, piece.c]];
-  while (open.length) {
-    open.sort((a, b) => a[0] - b[0]);
-    const [d, r, c] = open.shift();
+  const open = new MinHeap();
+  open.push([0, piece.r, piece.c]);
+  while (open.size) {
+    const [d, r, c] = open.pop();
     if (d > cost.get(key(r, c))) continue;
     for (const [dr, dc] of ORTHO) {
       const nr = r + dr, nc = c + dc;
@@ -74,6 +75,52 @@ function combat(state, attacker, target, charge) {
   return { attack, defense, allowed: attack >= defense };
 }
 
+// Moves to empty cells within the movement budget (never back onto the start cell).
+function moveActions(cost, budget) {
+  const out = [];
+  for (const [k, d] of cost) if (d > 0 && d <= budget) out.push({ kind: 'move', to: [Math.floor(k / 16), k % 16], cost: d });
+  return out;
+}
+
+// Attacks: a path whose last step enters the enemy's cell, within budget. Vanguard charge at exactly 4.
+function attackActions(state, piece, cost, budget) {
+  const out = [];
+  for (const enemy of state.pieces.filter((p) => p.team !== piece.team)) {
+    let best = Infinity;
+    for (const [dr, dc] of ORTHO) {
+      const fr = enemy.r + dr, fc = enemy.c + dc;
+      const d = cost.get(key(fr, fc));
+      if (d !== undefined) best = Math.min(best, d + stepCost(state.board[fr][fc], state.board[enemy.r][enemy.c]));
+    }
+    if (best > budget) continue;
+    const charge = piece.type === 'vanguard' && best === 4;
+    out.push({ kind: 'attack', to: [enemy.r, enemy.c], cost: best, targetId: enemy.id, charge, ...combat(state, piece, enemy, charge) });
+  }
+  return out;
+}
+
+// Explorer specials, from the starting cell, ignoring height: a diagonal step or a 2-cell jump.
+function explorerSpecials(state, piece) {
+  const at = new Map(state.pieces.map((p) => [key(p.r, p.c), p]));
+  const out = [];
+  const specials = [...DIAG.map(([dr, dc]) => ['diagonal', dr, dc]), ...ORTHO.map(([dr, dc]) => ['jump', 2 * dr, 2 * dc])];
+  for (const [special, dr, dc] of specials) {
+    const r = piece.r + dr, c = piece.c + dc;
+    if (!inside(r, c)) continue;
+    const there = at.get(key(r, c));
+    if (!there) out.push({ kind: 'move', to: [r, c], special });
+    else if (there.team !== piece.team)
+      out.push({ kind: 'attack', to: [r, c], special, targetId: there.id, charge: false, ...combat(state, piece, there, false) });
+  }
+  return out;
+}
+
+// Exit: reach the goal row with at least 1 movement point left.
+function canExit(piece, cost, budget) {
+  for (const [k, d] of cost) if (Math.floor(k / 16) === GOAL[piece.team] && d <= budget - 1) return true;
+  return false;
+}
+
 /**
  * Every action available to `piece`: moves to empty cells, attacks on enemies (with their strengths and
  * whether they are allowed), explorer specials (diagonal step, 2-cell jump), and the exit.
@@ -82,44 +129,14 @@ function combat(state, attacker, target, charge) {
  *   targetId?: string, attack?: number, defense?: number, allowed?: boolean, charge?: boolean}>}
  */
 export function actionsFor(state, piece) {
-  const { board, pieces } = state;
   const budget = PIECES[piece.type].move;
   const cost = pathCosts(state, piece);
-  const at = new Map(pieces.map((p) => [key(p.r, p.c), p]));
-  const out = [];
-
-  for (const [k, d] of cost) {
-    const r = Math.floor(k / 16), c = k % 16;
-    if (d > 0 && d <= budget) out.push({ kind: 'move', to: [r, c], cost: d });
-  }
-  // Attacks: the last step enters the enemy's cell.
-  for (const enemy of pieces.filter((p) => p.team !== piece.team)) {
-    let best = Infinity;
-    for (const [dr, dc] of ORTHO) {
-      const fr = enemy.r + dr, fc = enemy.c + dc;
-      const d = cost.get(key(fr, fc));
-      if (d !== undefined) best = Math.min(best, d + stepCost(board[fr][fc], board[enemy.r][enemy.c]));
-    }
-    if (best <= budget) {
-      const charge = piece.type === 'vanguard' && best === 4;
-      out.push({ kind: 'attack', to: [enemy.r, enemy.c], cost: best, targetId: enemy.id, charge, ...combat(state, piece, enemy, charge) });
-    }
-  }
-  // Explorer specials, from the starting cell, ignoring height.
-  if (piece.type === 'explorer') {
-    const specials = [...DIAG.map(([dr, dc]) => ['diagonal', dr, dc]), ...ORTHO.map(([dr, dc]) => ['jump', 2 * dr, 2 * dc])];
-    for (const [special, dr, dc] of specials) {
-      const r = piece.r + dr, c = piece.c + dc;
-      if (!inside(r, c)) continue;
-      const there = at.get(key(r, c));
-      if (!there) out.push({ kind: 'move', to: [r, c], special });
-      else if (there.team !== piece.team)
-        out.push({ kind: 'attack', to: [r, c], special, targetId: there.id, charge: false, ...combat(state, piece, there, false) });
-    }
-  }
-  // Exit: reach the goal row with at least 1 movement point left.
-  for (const [k, d] of cost) if (Math.floor(k / 16) === GOAL[piece.team] && d <= budget - 1) { out.push({ kind: 'exit' }); break; }
-  return out;
+  return [
+    ...moveActions(cost, budget),
+    ...attackActions(state, piece, cost, budget),
+    ...(piece.type === 'explorer' ? explorerSpecials(state, piece) : []),
+    ...(canExit(piece, cost, budget) ? [{ kind: 'exit' }] : []),
+  ];
 }
 
 const canAct = (state, team) => state.pieces.some((p) => p.team === team

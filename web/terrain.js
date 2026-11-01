@@ -1,4 +1,5 @@
 // Terrain generation, built on game.py's generator (gen_board, gen_mix_board, check_board).
+import { MinHeap } from './heap.js';
 // Board is SIZE x SIZE with a fixed border at height 0; playable cells are 1..10.
 
 export const SIZE = 12;
@@ -135,10 +136,10 @@ function crossing(b, fromRow, toRow) {
   const total = [3, 4, 5, 6, 7, 8].reduce((sum, c0) => {
     const cost = Array.from({ length: SIZE }, () => Array(SIZE).fill(Infinity));
     cost[fromRow][c0] = 0;
-    const open = [[0, fromRow, c0]];
-    while (open.length) {
-      open.sort((x, y) => x[0] - y[0]);
-      const [d, r, c] = open.shift();
+    const open = new MinHeap();
+    open.push([0, fromRow, c0]);
+    while (open.size) {
+      const [d, r, c] = open.pop();
       if (r === toRow) return sum + d;
       if (d > cost[r][c]) continue;
       for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {

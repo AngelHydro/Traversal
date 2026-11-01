@@ -1,4 +1,6 @@
-# Board Game
+# Traversal
+
+*Projet d'origine : « Board Game ».*
 
 **[Jouer en ligne](https://angelhydro.github.io/Traversal/)** · **[Règles du jeu](REGLES.md)**
 

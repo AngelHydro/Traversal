@@ -28,6 +28,7 @@ const solid = (color) => mat(color, () => new THREE.MeshStandardMaterial({ color
 const EDGE = () => mat('edge', () => new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.5 }));
 const MOVE_PLATE = () => mat('move', () => new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.6 }));
 const ATTACK_PLATE = () => mat('attack', () => new THREE.MeshBasicMaterial({ color: 0xff2d2d, transparent: true, opacity: 0.7 }));
+const REFUSED_PLATE = () => mat('refused', () => new THREE.MeshBasicMaterial({ color: 0x6b6b6b, transparent: true, opacity: 0.7 }));
 
 function pieceMesh(piece) {
   const geo = SHAPES[piece.type]();
@@ -121,10 +122,10 @@ export function createScene(container) {
     }
   }
 
-  // Yellow plates: cells to move to. Red plates: enemies that can be attacked.
-  function setHighlights(moves, attacks = []) {
+  // Yellow plates: cells to move to. Red: enemies that can be attacked. Grey: enemies in reach but too strong.
+  function setHighlights(moves, attacks = [], refused = []) {
     clear(highlightGroup);
-    for (const [cells, material] of [[moves, MOVE_PLATE()], [attacks, ATTACK_PLATE()]])
+    for (const [cells, material] of [[moves, MOVE_PLATE()], [attacks, ATTACK_PLATE()], [refused, REFUSED_PLATE()]])
       for (const [r, c] of cells) {
         const plate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.9), material);
         plate.position.set(cx(c), top(board[r][c]) + 0.02, cz(r));

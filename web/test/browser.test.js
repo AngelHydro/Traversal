@@ -94,7 +94,21 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     assert.match(await page.textContent('#status'), /joueur 2 \(bleu\)/);
     g = await play(g, 'blue-0', (a, b) => Math.abs(a.to[1] - 3) - Math.abs(b.to[1] - 3) || a.to[0] - b.to[0]);
     assert.match(await page.textContent('#score'), /Coup 2\/200/);
-    assert.deepEqual(await canvas.boundingBox(), rect0, 'the view must not jump while playing');
+
+    assert.deepEqual(await canvas.boundingBox(), rect0, 'the view must not jump while playing with the mouse');
+
+    // Keyboard play: the list holds the side to move's actions in words; Enter-free, focus + select + button.
+    await page.focus('#keyboard summary');
+    await page.keyboard.press('Enter');                                   // open "Jouer au clavier"
+    await page.focus('#choices');
+    const options = await page.$$eval('#choices option', (os) => os.map((o) => o.textContent));
+    assert.ok(options.length > 5 && options.every((t) => /^\S+ rouge [a-j]\d+ \(hauteur -?\d+\) : /.test(t)), options[0]);
+    await page.selectOption('#choices', { index: 0 });
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Enter');                                   // the "Jouer" button
+    assert.match(await page.textContent('#score'), /Coup 3\/200/);
+    assert.match(await page.textContent('#status'), /joueur 2 \(bleu\)/);
+    assert.ok((await page.$$eval('#choices option', (os) => os.map((o) => o.textContent))).every((t) => / bleue? /.test(t)));
     assert.deepEqual(errors, []);
 
     // A lost WebGL context is reported, and the banner goes away once the browser restores it.

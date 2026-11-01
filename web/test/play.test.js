@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newGameState, handleClick, handleExit, highlights, TEAM, square } from '../play.js';
+import { newGameState, handleClick, handleExit, highlights, actionChoices, playChoice, TEAM, square } from '../play.js';
 
 const flat = () => Array.from({ length: 12 }, () => Array(12).fill(0));
 const P = (id, type, team, r, c) => ({ id, type, team, r, c });
@@ -80,4 +80,24 @@ test('each reachable cell is highlighted once, even when an explorer has two way
   const keys = highlights(s).moves.map(([r, c]) => `${r},${c}`);
   assert.equal(new Set(keys).size, keys.length);
   assert.ok(keys.includes('4,4'));
+});
+test('refused attacks are listed apart, and the selection message gives every attack\'s strengths', () => {
+  const pcs = [P('rv', 'vanguard', 'red', 5, 5), P('bs', 'sentinel', 'blue', 5, 6), P('be', 'explorer', 'blue', 4, 5), P('bx', 'explorer', 'blue', 1, 1)];
+  const s = handleClick(start(pcs), 5, 5);
+  const hl = highlights(s);
+  assert.deepEqual(hl.attacks, [[4, 5]]);
+  assert.deepEqual(hl.refused, [[5, 6]]);
+  assert.match(s.message, /Attaques : e7 2 contre 1, f6 2 contre 3 \(trop fort\)/);
+});
+test('keyboard play: every legal action of the side to move, described in words', () => {
+  const pcs = [P('rv', 'vanguard', 'red', 2, 5), P('rs', 'sentinel', 'red', 5, 5), P('be', 'explorer', 'blue', 5, 6), P('bx', 'explorer', 'blue', 9, 9)];
+  const choices = actionChoices(start(pcs));
+  const labels = choices.map((c) => c.label);
+  assert.ok(labels.includes('Avant-garde rouge e9 (hauteur 0) : franchir l\'arrivée (+2)'));
+  assert.ok(labels.includes('Sentinelle rouge e6 (hauteur 0) : attaquer Explorateur bleu en f6 (3 contre 1)'));
+  assert.ok(labels.some((l) => /^Sentinelle rouge e6 \(hauteur 0\) : aller en e7 \(coût 1\)$/.test(l)));
+  assert.ok(choices.every((c) => c.pieceId.startsWith('r')));
+  const s = playChoice(start(pcs), choices.find((c) => /franchir/.test(c.label)));
+  assert.equal(s.scores.red, 2);
+  assert.match(s.message, /franchit l'arrivée/);
 });

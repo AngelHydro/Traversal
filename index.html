@@ -22,12 +22,16 @@
   #status.red::before { background: #d12a2a; }
   #status.blue::before { background: #2f62d8; }
   #help { width: 100%; margin: 0; font-size: 12px; color: #555; }
-  #help summary { cursor: pointer; }
+  #help summary, #keyboard summary { cursor: pointer; }
+  #keyboard { width: 100%; font-size: 12px; color: #555; }
+  #keyboard label { display: block; margin: 4px 0 2px; }
+  #choices { max-width: 100%; font-size: 12px; }
   /* Phones: a compact panel so the board keeps most of the screen. */
   @media (max-width: 500px) {
     #panel { margin: 8px 8px 0; padding: 6px 8px; gap: 4px 6px; max-width: none; }
     #panel h1 { display: none; }
     #status, #score { width: auto; }
+    #keyboard:not([open]), #help:not([open]) { width: auto; } /* closed: side by side on one line */
     #score { margin-left: auto; }
   }
   #last { width: 100%; font-size: 13px; height: 2.8em; overflow-y: auto; } /* fixed: messages never resize the view */
@@ -50,6 +54,10 @@
   <div id="status"></div>
   <div id="last" aria-live="polite"></div>
   <div id="score"></div>
+  <details id="keyboard"><summary>Jouer au clavier</summary>
+    <label for="choices">Coups possibles</label>
+    <select id="choices"></select> <button id="play">Jouer</button>
+  </details>
   <details id="help"><summary>Comment jouer</summary>Faites traverser vos pièces et sortez par le bord opposé : chaque pièce arrivée rapporte sa Force. Cliquez une de vos pièces, puis une case jaune pour la déplacer ou rouge pour attaquer. Monter ou descendre coûte la différence de hauteur + 1. Une Sentinelle arrivée la première gagne aussitôt ; sinon la partie s'arrête à la deuxième arrivée. Glissez pour tourner autour du plateau.</details>
 </div>
 <div id="view"></div>

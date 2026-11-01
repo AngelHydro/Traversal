@@ -1,7 +1,7 @@
 // Page wiring: terrain mode, board number, clicks, exit button, and what the player is told.
 import { MODES, DEFAULT_MODE, generateBoard, makeRng } from './terrain.js';
 import { MOVE_LIMIT } from './rules.js';
-import { newGameState, handleClick, handleExit, highlights, TEAM } from './play.js';
+import { newGameState, handleClick, handleExit, highlights, actionChoices, playChoice, TEAM } from './play.js';
 import { createScene } from './scene.js';
 
 const $ = (id) => document.getElementById(id);
@@ -32,7 +32,8 @@ let state;
 function render() {
   const hl = highlights(state);
   view.setPieces(state.pieces, state.selected, state.winner ? undefined : state.turn);
-  view.setHighlights(hl.moves, hl.attacks);
+  view.setHighlights(hl.moves, hl.attacks, hl.refused);
+  renderChoices();
   $('exit').hidden = !hl.canExit;
   $('status').textContent = state.winner
     ? (state.winner === 'draw' ? 'Match nul' : `Victoire du joueur ${state.winner === 'red' ? 1 : 2} (${TEAM[state.winner]})`)
@@ -41,6 +42,14 @@ function render() {
   $('last').textContent = state.message;
   $('score').textContent = `Score : rouge ${state.scores.red}, bleu ${state.scores.blue} · Arrivées ${state.exited.length}/2 · `
     + `Coup ${state.moveCount}/${MOVE_LIMIT} · Plateau n° ${state.seed}`;
+}
+
+// Keyboard and screen-reader play: every legal action of the side to move, in words.
+let choices = [];
+function renderChoices() {
+  choices = actionChoices(state);
+  $('choices').replaceChildren(...choices.map((c, i) => new Option(c.label, i)));
+  $('play').disabled = choices.length === 0;
 }
 
 function newGame() {
@@ -69,6 +78,10 @@ try {
   }, true);
   view.onCellClick(guarded((r, c) => { state = handleClick(state, r, c); render(); }));
   $('exit').addEventListener('click', guarded(() => { state = handleExit(state); render(); }));
+  $('play').addEventListener('click', guarded(() => {
+    const choice = choices[Number($('choices').value)];
+    if (choice) { state = playChoice(state, choice); render(); }
+  }));
   $('new').addEventListener('click', guarded(newGame));
   select.addEventListener('change', guarded(newGame));
   newGame();
