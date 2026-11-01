@@ -78,3 +78,17 @@ test('Aléatoire draws one terrain mode, uniformly, then builds the whole board 
   }
   assert.equal(seen.size, MODES.length - 1);
 });
+
+test('soft palette: a smooth gradient from deep water to snow; classic keeps game.py colors', () => {
+  const rgb = (x) => [(x >> 16) & 255, (x >> 8) & 255, x & 255];
+  assert.equal(colorForHeight(0, 'classic'), 0x008000);
+  let worst = 0;
+  for (let h = -10; h < 10; h++) {
+    const [a, b] = [rgb(colorForHeight(h, 'soft')), rgb(colorForHeight(h + 1, 'soft'))];
+    worst = Math.max(worst, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+  }
+  assert.ok(worst < 70, `step ${worst}`);
+  const [r, g, b] = rgb(colorForHeight(-10, 'soft'));
+  assert.ok(b > r && b > g, 'deep is blue');
+  assert.ok(rgb(colorForHeight(10, 'soft')).every((v) => v > 220), 'top is snow');
+});

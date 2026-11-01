@@ -9,8 +9,8 @@ import { extname } from 'node:path';
 import * as THREE from '../vendor/three.module.js';
 import { generateBoard, makeRng } from '../terrain.js';
 import { newGame, actionsFor, applyAction } from '../rules.js';
-import { square } from '../play.js';
-import { boardSphere, fitCamera, HEIGHT_UNIT, VIEW_DIR } from '../camera.js';
+import { square, newGameState, actionChoices, playChoice } from '../play.js';
+import { boardBox, fitCamera, HEIGHT_UNIT, VIEW_DIR } from '../camera.js';
 
 let chromium = null;
 try { ({ chromium } = createRequire(import.meta.url)('playwright')); } catch { /* not installed */ }
@@ -37,9 +37,9 @@ async function serve() {
 // at(r, c, dz, dy): dz shifts towards the far edge (negative), dy lifts above the top face.
 // The highlight plate is 0.04 thick on the top face, so a target is aimed at dy = 0.02.
 function projector(board, rect) {
-  const s = boardSphere(board);
+  const s = boardBox(board);
   const aspect = rect.width / rect.height;
-  const { position, target } = fitCamera(s.center, s.radius, 45, aspect, VIEW_DIR);
+  const { position, target } = fitCamera(s.center, s.half, 45, aspect, VIEW_DIR);
   const cam = new THREE.PerspectiveCamera(45, aspect, 0.1, 200);
   cam.position.fromArray(position); cam.lookAt(...target); cam.updateMatrixWorld();
   return (r, c, dz, dy) => {
@@ -134,6 +134,131 @@ test('page plays a game in a real browser', { skip: !chromium && 'playwright not
     await page.waitForTimeout(300);
     assert.match(await page.textContent('#error'), /Une erreur est survenue/);
     assert.equal(await page.$eval('#error', (e) => e.hidden), false);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+test('a piece exits by clicking the cell past the finish line', { skip: !chromium && 'playwright not installed' }, async () => {
+  const server = await serve();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: W, height: H } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`http://127.0.0.1:${server.address().port}/?terrain=woods&plateau=5`);
+    await page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    const board = generateBoard('woods', makeRng(5));
+    let g = newGameState(board, 'Bois');                 // mirrors the page, move for move
+    await page.click('#keyboard summary');
+    const playKeyboard = async (choice) => {
+      await page.selectOption('#choices', { index: actionChoices(g).findIndex((x) => x.label === choice.label) });
+      await page.click('#play');
+      g = playChoice(g, choice);
+    };
+    // Red runs its explorer up the board (blue plays its first listed move) until it can exit.
+    const explorer = () => g.pieces.find((p) => p.id === 'red-2');
+    for (let turn = 0; turn < 8 && !actionChoices(g).some((c) => c.pieceId === 'red-2' && c.action.kind === 'exit'); turn++) {
+      const mine = actionChoices(g).filter((c) => c.pieceId === 'red-2' && c.action.kind === 'move');
+      await playKeyboard(mine.sort((a, b) => a.action.to[0] - b.action.to[0])[0]);
+      await playKeyboard(actionChoices(g)[0]);
+    }
+    const exit = actionChoices(g).find((c) => c.pieceId === 'red-2' && c.action.kind === 'exit');
+    assert.ok(exit, 'the explorer reached the finish line');
+    await page.waitForTimeout(1200);                     // let the walk animations end
+    const canvas = page.locator('#view canvas');
+    const at = projector(board, await canvas.boundingBox());
+    const e = explorer();
+    await page.mouse.click(...at(e.r, e.c, 0, 0.25));
+    await page.waitForTimeout(150);
+    const [, c] = exit.action.to;                        // the exit plate sits past row 1, at row 1's height
+    await page.mouse.click(...at(1, c, -1.1, 0.02));
+    await page.waitForTimeout(150);
+    assert.match(await page.textContent('#last'), /Explorateur rouge franchit l'arrivée : \+1/);
+    assert.match(await page.textContent('#score'), /rouge 1/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+test("resizing the view keeps the player's zoom", { skip: !chromium && 'playwright not installed' }, async () => {
+  const server = await serve();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: W, height: H }, colorScheme: 'light' });
+    const url = `http://127.0.0.1:${server.address().port}/?terrain=woods&plateau=5`;
+    // Width in pixels of the board along the canvas' middle line (anything not the light background).
+    const boardWidth = async () => {
+      const png = (await page.locator('#view canvas').screenshot()).toString('base64');
+      return page.evaluate(async (src) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${src}`;
+        await img.decode();
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const g = c.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const row = g.getImageData(0, Math.floor(img.height / 2), img.width, 1).data;
+        const bg = [0xdf, 0xe9, 0xf3];
+        let lo = Infinity, hi = -1;
+        for (let x = 0; x < img.width; x++)
+          if (Math.abs(row[4 * x] - bg[0]) + Math.abs(row[4 * x + 1] - bg[1]) + Math.abs(row[4 * x + 2] - bg[2]) > 30)
+            { lo = Math.min(lo, x); hi = x; }
+        return hi - lo;
+      }, png);
+    };
+    const ready = () => page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    const openHelp = async () => { await page.click('#help summary'); await page.waitForTimeout(400); };
+
+    await page.goto(url); await ready();
+    await openHelp();                                    // the panel grows: the canvas gets smaller
+    const fitted = await boardWidth();
+
+    await page.goto(url); await ready();
+    const box = await page.locator('#view canvas').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    for (let i = 0; i < 4; i++) { await page.mouse.wheel(0, -200); await page.waitForTimeout(80); }
+    await page.waitForTimeout(300);
+    await openHelp();
+    const zoomed = await boardWidth();
+    assert.ok(zoomed > fitted * 1.15, `zoom lost on resize: ${zoomed}px vs ${fitted}px fitted`);
+  } finally {
+    await browser.close();
+    server.close();
+  }
+});
+
+test('settings: change, apply at once, and survive a reload', { skip: !chromium && 'playwright not installed' }, async () => {
+  const server = await serve();
+  const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: W, height: H }, colorScheme: 'light' });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+    await page.goto(`http://127.0.0.1:${server.address().port}/?terrain=desert&plateau=3`);
+    await page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'light');
+    await page.click('#open-settings');
+    assert.equal(await page.$eval('#settings', (d) => d.open), true);
+    await page.selectOption('#settings [name=heightMarks]', 'numbers');
+    await page.selectOption('#settings [name=palette]', 'classic');
+    await page.selectOption('#settings [name=theme]', 'dark');
+    await page.uncheck('#settings [name=showCosts]');
+    await page.check('#settings [name=rotateCamera]');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
+    await page.click('#settings .close');
+    assert.equal(await page.$eval('#settings', (d) => d.open), false);
+
+    await page.reload();
+    await page.waitForFunction(() => document.getElementById('status').textContent !== '');
+    assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
+    assert.deepEqual(await page.$eval('#settings form', (f) => [f.heightMarks.value, f.palette.value, f.theme.value,
+      f.showCosts.checked, f.rotateCamera.checked, f.animations.checked]), ['numbers', 'classic', 'dark', false, true, true]);
+    assert.deepEqual(errors, []);
   } finally {
     await browser.close();
     server.close();

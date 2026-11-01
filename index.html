@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Traversal</title>
 <style>
-  :root { --bg: #dfe9f3; --panel: rgba(255,255,255,.9); --text: #1a1a1a; --accent: #cc0000; }
+  :root { --bg: #dfe9f3; --panel: rgba(255,255,255,.9); --text: #1a1a1a; --muted: #555; --accent: #cc0000; --field: #fff; }
+  :root[data-theme="dark"] { --bg: #15181d; --panel: rgba(32,36,43,.94); --text: #e8eaed; --muted: #a9b0bb; --accent: #ff6b6b; --field: #262b33; }
+  select, button { color: var(--text); background: var(--field); border: 1px solid rgba(128,128,128,.5); border: 1px solid color-mix(in srgb, var(--text) 30%, transparent); border-radius: 4px; } /* first border: browsers without color-mix() */
   html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
   body { display: flex; flex-direction: column; }
   /* The panel sits above the 3D view, never over it, so it cannot hide the back row. */
@@ -21,9 +23,9 @@
   #status.blue::before, #status.red::before { content: ''; display: inline-block; width: .8em; height: .8em; margin-right: .4em; border-radius: 50%; vertical-align: -.05em; }
   #status.red::before { background: #d12a2a; }
   #status.blue::before { background: #2f62d8; }
-  #help { width: 100%; margin: 0; font-size: 12px; color: #555; }
+  #help { width: 100%; margin: 0; font-size: 12px; color: var(--muted); }
   #help summary, #keyboard summary { cursor: pointer; }
-  #keyboard { width: 100%; font-size: 12px; color: #555; }
+  #keyboard { width: 100%; font-size: 12px; color: var(--muted); }
   #keyboard label { display: block; margin: 4px 0 2px; }
   #choices { max-width: 100%; font-size: 12px; }
   /* Phones: a compact panel so the board keeps most of the screen. */
@@ -35,7 +37,15 @@
     #score { margin-left: auto; }
   }
   #last { width: 100%; font-size: 13px; height: 2.8em; overflow-y: auto; } /* fixed: messages never resize the view */
-  #score { width: 100%; font-size: 13px; color: #444; }
+  #score { width: 100%; font-size: 13px; color: var(--muted); }
+  #score.pulse { animation: pulse .9s ease-out; }
+  @keyframes pulse { 0% { color: var(--accent); transform: scale(1.08); } 100% { color: var(--muted); transform: scale(1); } }
+  #settings { border: none; border-radius: 10px; padding: 16px 18px; background: var(--panel); color: var(--text);
+    box-shadow: 0 8px 30px rgba(0,0,0,.35); max-width: min(360px, calc(100vw - 32px)); }
+  #settings::backdrop { background: rgba(0,0,0,.35); }
+  #settings h2 { margin: 0 0 10px; font-size: 17px; }
+  #settings label { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 8px 0; font-size: 14px; }
+  #settings .close { margin-top: 10px; width: 100%; }
   #error { position: fixed; bottom: 12px; left: 12px; right: 12px; padding: 10px; background: #fee; color: #900; border-radius: 6px; }
 </style>
 <script type="importmap">
@@ -50,7 +60,7 @@
   <h1>Traversal</h1>
   <select id="landscape" aria-label="Terrain"></select>
   <button id="new">Nouvelle partie</button>
-  <button id="exit" hidden>Franchir l'arrivée</button>
+  <button id="open-settings" aria-haspopup="dialog">Paramètres</button>
   <div id="status"></div>
   <div id="last" aria-live="polite"></div>
   <div id="score"></div>
@@ -58,9 +68,24 @@
     <label for="choices">Coups possibles</label>
     <select id="choices"></select> <button id="play">Jouer</button>
   </details>
-  <details id="help"><summary>Comment jouer</summary>Faites traverser vos pièces et sortez par le bord opposé : chaque pièce arrivée rapporte sa Force. Cliquez une de vos pièces, puis une case jaune pour la déplacer ou rouge pour attaquer. Monter ou descendre coûte la différence de hauteur + 1. Une Sentinelle arrivée la première gagne aussitôt ; sinon la partie s'arrête à la deuxième arrivée. Glissez pour tourner autour du plateau.</details>
+  <details id="help"><summary>Comment jouer</summary>Faites traverser vos pièces et sortez par le bord opposé : chaque pièce arrivée rapporte sa Force. Cliquez une de vos pièces, puis une case jaune pour la déplacer ou rouge pour attaquer (violette : pas en diagonale ou bond de l'Explorateur, qui ignorent le relief) ; pour franchir l'arrivée, avancez d'une case au-delà du bord, sur la case jaune hors du plateau. Monter ou descendre coûte la différence de hauteur + 1. Une Sentinelle arrivée la première gagne aussitôt ; sinon la partie s'arrête à la deuxième arrivée. Glissez pour tourner autour du plateau.</details>
 </div>
 <div id="view"></div>
+<dialog id="settings" aria-labelledby="settings-title">
+  <form method="dialog">
+    <h2 id="settings-title">Paramètres</h2>
+    <label>Repères de hauteur
+      <select name="heightMarks"><option value="notches">Encoches</option><option value="numbers">Chiffres</option></select></label>
+    <label>Coût des déplacements <input type="checkbox" name="showCosts"></label>
+    <label>Couleurs du terrain
+      <select name="palette"><option value="soft">Douces</option><option value="classic">Classiques</option></select></label>
+    <label>Thème
+      <select name="theme"><option value="system">Système</option><option value="light">Clair</option><option value="dark">Sombre</option></select></label>
+    <label>Tourner le plateau vers le joueur actif <input type="checkbox" name="rotateCamera"></label>
+    <label>Animations <input type="checkbox" name="animations"></label>
+    <button class="close" value="close">Fermer</button>
+  </form>
+</dialog>
 <noscript><div>Ce jeu nécessite JavaScript.</div></noscript>
 <div id="error" role="alert" hidden>Impossible de charger le jeu.</div>
 <script type="module" src="./web/main.js" onerror="document.getElementById('error').hidden = false"></script>
