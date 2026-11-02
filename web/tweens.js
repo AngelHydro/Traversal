@@ -18,7 +18,10 @@ export function createTweens(now) {
     setEnabled(on) { enabled = on; },
     /** Advances every tween to time `t` (call once per frame). */
     run(t) {
-      tweens = tweens.filter((x) => {
+      // Tweens started from an update or a done() (chained animations) go to a fresh list and are kept.
+      const current = tweens;
+      tweens = [];
+      const kept = current.filter((x) => {
         if (t < x.start) return true;
         const k = Math.min(1, (t - x.start) / x.ms);
         x.update(k);
@@ -26,6 +29,7 @@ export function createTweens(now) {
         x.done();
         return false;
       });
+      tweens = kept.concat(tweens);
     },
   };
 }

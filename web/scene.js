@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { colorForHeight } from './terrain.js';
 import { pickCell, createClickTracker } from './pick.js';
 import { HEIGHT_UNIT, VIEW_DIR, MAX_POLAR, floorFor, boardBox, fitCamera, zoomLimits } from './camera.js';
-import { pieceShape, spikePositions } from './shapes.js';
+import { SHAPES } from './shapes.js';
 import { createTweens } from './tweens.js';
 
 const LIFT = 0.15;   // selected piece is raised by this much
@@ -37,7 +37,7 @@ const PLATES = {
 
 // Small text drawn on a flat square (height numbers, costs) or a floating sprite (combat result).
 // Textures are cached for the page's lifetime: the set of texts is small and bounded (heights -10..10,
-// costs, D/B marks, a few "x contre y"), so the cache never needs clearing.
+// costs, D/B marks), so the cache never needs clearing.
 const textures = new Map();
 function textTexture(text, color = '#ffffff') {
   const k = text + color;
@@ -65,19 +65,20 @@ function label(text, size, opacity = 0.9) {
   return noPick(m);
 }
 
-// Pieces follow the rule sheet: a base with as many sides as the Movement, as many spikes as the Strength.
+// Pieces are plain solids (shapes.js): a pentagonal frustum, a wedge, a triangular prism.
 function pieceMesh(piece) {
-  const { sides, spikes } = pieceShape(piece.type);
-  const material = solid(TEAM_COLOR[piece.team]);
-  const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.4, 0.18, sides), material);
-  base.position.y = 0.09;
-  g.add(base);
-  for (const [x, z] of spikePositions(spikes, spikes === 1 ? 0 : 0.15)) {
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.3, 8), material);
-    spike.position.set(x, 0.18 + 0.15, z);
-    g.add(spike);
+  const s = SHAPES[piece.type];
+  let geo;
+  if (s.kind === 'frustum') {
+    geo = new THREE.CylinderGeometry(s.top, s.bottom, s.height, s.sides);
+    geo.translate(0, s.height / 2, 0);
+  } else {
+    geo = new THREE.ExtrudeGeometry(new THREE.Shape(s.profile.map(([x, y]) => new THREE.Vector2(x, y))),
+      { depth: s.depth, bevelEnabled: false });
+    geo.translate(0, 0, -s.depth / 2);           // centred on the cell; the profile faces the camera
   }
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(geo, solid(TEAM_COLOR[piece.team])));
   return g;
 }
 
@@ -285,10 +286,10 @@ export function createScene(container) {
 
   /**
    * Animates the move just played (play.js `state.last`), before the new position is drawn:
-   * the piece walks its path; a captured piece sinks and fades under "attack contre defense";
-   * an exiting piece walks past the finish line and rises away.
+   * the piece walks its path; a captured piece sinks and fades; an exiting piece walks past the finish
+   * line, rises and fades away.
    */
-  function playMove(last, combatText) {
+  function playMove(last) {
     const { pieceId, action, path, targetId } = last;
     if (action.kind === 'exit') {
       const g = ghost(pieceId);
@@ -304,15 +305,6 @@ export function createScene(container) {
       if (victim) {
         const y0 = victim.position.y;
         tween(500, (k) => { victim.position.y = y0 - 0.5 * k; fade(victim, 1 - k); }, () => dispose(victim), ms * 0.8);
-      }
-      if (combatText) {
-        const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTexture(combatText, '#ffe066'), transparent: true }));
-        s.scale.set(1.4, 1.4, 1);
-        const [r, c] = action.to;
-        const p0 = at(r, c, 0.7);
-        effectGroup.add(s);
-        tween(900, (k) => { s.position.set(p0.x, p0.y + 0.6 * k, p0.z); s.material.opacity = 1 - k * k; },
-          () => { effectGroup.remove(s); s.material.dispose(); }, ms * 0.8);
       }
     }
   }

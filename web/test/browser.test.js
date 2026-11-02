@@ -177,6 +177,23 @@ test('a piece exits by clicking the cell past the finish line', { skip: !chromiu
     await page.waitForTimeout(150);
     assert.match(await page.textContent('#last'), /Explorateur rouge franchit l'arrivée : \+1/);
     assert.match(await page.textContent('#score'), /rouge 1/);
+    // ...and it leaves the game: once the animation is over, nothing red remains past the finish line.
+    await page.waitForTimeout(2000);
+    const [px, py] = at(1, c, -1, 0.3);
+    const red = await page.evaluate(async ({ src, px, py }) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${src}`;
+      await img.decode();
+      const cv = document.createElement('canvas');
+      cv.width = img.width; cv.height = img.height;
+      const g = cv.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(Math.round(px) - 25, Math.round(py) - 60, 50, 45).data;  // above the red finish strip
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 140 && d[i + 1] < 90 && d[i + 2] < 90) n++;
+      return n;
+    }, { src: (await page.screenshot()).toString('base64'), px, py });
+    assert.ok(red < 20, `the exited piece is still drawn (${red} red pixels past the finish line)`);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
