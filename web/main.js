@@ -85,8 +85,7 @@ function update(next) {
   state = next;
   const played = state.last && state.last !== prev.last;
   if (played) {
-    const a = state.last.action;
-    view.playMove(state.last, a.kind === 'attack' ? `${a.attack} contre ${a.defense}` : null);
+    view.playMove(state.last);
   }
   render();
   if (state.scores.red !== prev.scores.red || state.scores.blue !== prev.scores.blue) {

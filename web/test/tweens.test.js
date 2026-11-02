@@ -35,3 +35,25 @@ test('clear drops every running tween', () => {
   tw.run(50);
   assert.equal(ran, false);
 });
+test('a tween started from another tween\'s done() is kept and runs (chained animations)', () => {
+  const tw = createTweens(() => 0);
+  const seen = [];
+  tw.tween(100, () => {}, () => tw.tween(100, (k) => seen.push(k), () => seen.push('second done')));
+  tw.run(100);                    // first ends here and starts the second (its clock reads 0)
+  tw.run(50); tw.run(100);
+  assert.deepEqual(seen, [0.5, 1, 'second done']);
+});
+test('cancel() and clear() called during a pass take effect at once', () => {
+  const tw = createTweens(() => 0);
+  const seen = [];
+  const victim = tw.tween(100, (k) => seen.push(['victim', k]));
+  tw.tween(10, () => {}, () => tw.cancel(victim));       // ends first in the same pass and cancels the other
+  tw.run(50); tw.run(100);
+  assert.ok(!seen.some(([, k]) => k > 0.5), 'cancelled tween stopped');
+  const tw2 = createTweens(() => 0);
+  let late = 0;
+  tw2.tween(10, () => {}, () => tw2.clear());
+  tw2.tween(100, () => { late++; });
+  tw2.run(50); tw2.run(100);
+  assert.equal(late, 0, 'cleared in the same pass: never runs');
+});

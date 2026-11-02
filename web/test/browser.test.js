@@ -169,14 +169,37 @@ test('a piece exits by clicking the cell past the finish line', { skip: !chromiu
     await page.waitForTimeout(1200);                     // let the walk animations end
     const canvas = page.locator('#view canvas');
     const at = projector(board, await canvas.boundingBox());
+    const [, c] = exit.action.to;                        // the exit plate sits past row 1, at row 1's height
+    // Strongly red pixels in a box past the finish line, above the red finish strip, at column c.
+    const redPast = async () => {
+      const [px, py] = at(1, c, -1, 0.3);
+      return page.evaluate(async ({ src, px, py }) => {
+        const img = new Image();
+        img.src = `data:image/png;base64,${src}`;
+        await img.decode();
+        const cv = document.createElement('canvas');
+        cv.width = img.width; cv.height = img.height;
+        const g = cv.getContext('2d');
+        g.drawImage(img, 0, 0);
+        const d = g.getImageData(Math.round(px) - 25, Math.round(py) - 60, 50, 45).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 140 && d[i + 1] < 90 && d[i + 2] < 90) n++;
+        return n;
+      }, { src: (await page.screenshot()).toString('base64'), px, py });
+    };
+    const before = await redPast();                      // nothing selected yet, nothing moving
     const e = explorer();
     await page.mouse.click(...at(e.r, e.c, 0, 0.25));
     await page.waitForTimeout(150);
-    const [, c] = exit.action.to;                        // the exit plate sits past row 1, at row 1's height
     await page.mouse.click(...at(1, c, -1.1, 0.02));
     await page.waitForTimeout(150);
     assert.match(await page.textContent('#last'), /Explorateur rouge franchit l'arrivée : \+1/);
     assert.match(await page.textContent('#score'), /rouge 1/);
+    // ...and it leaves the game: once the animation is over, the area past the finish line looks as it did
+    // before the exit (whatever else stands nearby, like another red piece, is in both counts).
+    await page.waitForTimeout(2000);
+    const after = await redPast();
+    assert.ok(after - before < 20, `the exited piece is still drawn (${after - before} red pixels past the finish line)`);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
