@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { colorForHeight } from './terrain.js';
 import { pickCell, createClickTracker } from './pick.js';
 import { HEIGHT_UNIT, VIEW_DIR, MAX_POLAR, floorFor, boardBox, fitCamera, zoomLimits } from './camera.js';
-import { SHAPES } from './shapes.js';
+import { SHAPES, facing } from './shapes.js';
 import { createTweens } from './tweens.js';
 
 const LIFT = 0.15;   // selected piece is raised by this much
@@ -39,9 +39,8 @@ const PLATES = {
 // Textures are cached for the page's lifetime: the set of texts is small and bounded (heights -10..10,
 // costs, D/B marks), so the cache never needs clearing.
 const textures = new Map();
-function textTexture(text, color = '#ffffff') {
-  const k = text + color;
-  if (!textures.has(k)) {
+function textTexture(text) {
+  if (!textures.has(text)) {
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 64;
     const g = canvas.getContext('2d');
@@ -51,11 +50,11 @@ function textTexture(text, color = '#ffffff') {
     g.lineWidth = 6;
     g.strokeStyle = 'rgba(0,0,0,.65)';
     g.strokeText(text, 32, 34);
-    g.fillStyle = color;
+    g.fillStyle = '#ffffff';
     g.fillText(text, 32, 34);
-    textures.set(k, new THREE.CanvasTexture(canvas));
+    textures.set(text, new THREE.CanvasTexture(canvas));
   }
-  return textures.get(k);
+  return textures.get(text);
 }
 function label(text, size, opacity = 0.9) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size),
@@ -65,7 +64,7 @@ function label(text, size, opacity = 0.9) {
   return noPick(m);
 }
 
-// Pieces are plain solids (shapes.js): a pentagonal frustum, a wedge, a triangular prism.
+// Pieces are plain solids (shapes.js): a pentagonal frustum, a diamond wedge, a standing triangular prism.
 function pieceMesh(piece) {
   const s = SHAPES[piece.type];
   let geo;
@@ -75,8 +74,10 @@ function pieceMesh(piece) {
   } else {
     geo = new THREE.ExtrudeGeometry(new THREE.Shape(s.profile.map(([x, y]) => new THREE.Vector2(x, y))),
       { depth: s.depth, bevelEnabled: false });
-    geo.translate(0, 0, -s.depth / 2);           // centred on the cell; the profile faces the camera
+    geo.translate(0, 0, -s.depth / 2);           // centred on the cell
+    geo.rotateY(s.turn || 0);
   }
+  geo.rotateY(facing(piece.team));               // each side's pieces face their direction of travel
   const g = new THREE.Group();
   g.add(new THREE.Mesh(geo, solid(TEAM_COLOR[piece.team])));
   return g;
